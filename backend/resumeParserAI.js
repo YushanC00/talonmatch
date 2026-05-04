@@ -33,7 +33,7 @@ Return ONLY this JSON — no markdown, no extra keys:
 
 async function parseResumeAI(rawText) {
   const completion = await getClient().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: `Parse this resume. Extract ALL jobs:\n\n${rawText.slice(0, 8000)}` },

@@ -8,7 +8,7 @@ function getClient() {
 
 async function groqJSON(systemPrompt, userMessage) {
   const completion = await getClient().chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
@@ -56,6 +56,8 @@ RULES:
 2. ONLY reframe existing facts using JD vocabulary
 3. NO AI buzzwords
 4. You MAY add 1-2 new bullets ONLY for skills in the candidate's skills list that the JD requires — set is_new_suggestion: true
+
+CRITICAL JSON INSTRUCTION: You must copy the original_text EXACTLY character-for-character from the input. DO NOT truncate, summarize, or drop the leading words. Your tailored_text MUST also be a complete, grammatically correct sentence that starts with a capitalized action verb. Do not cut off the beginning of any sentence.
 
 Return ONLY this JSON — no markdown, no extra keys:
 {
@@ -115,4 +117,17 @@ async function tailorResume({ parsedResume, jobDescription }) {
   };
 }
 
-module.exports = { tailorResume };
+// ── Suggestion Validation (placeholder for writing suggestion engine) ─────────
+// Validates a suggestion object conforms to the expected schema before it is
+// applied to resume text. Expand VALID_TYPES as the AST shape grows.
+function validateSuggestionAST(suggestion) {
+  if (!suggestion || typeof suggestion !== 'object') return false;
+  const { type, original, replacement } = suggestion;
+  if (typeof type !== 'string' || !type) return false;
+  if (typeof original !== 'string') return false;
+  if (typeof replacement !== 'string') return false;
+  const VALID_TYPES = ['rephrase', 'quantify', 'action_verb', 'keyword_inject'];
+  return VALID_TYPES.includes(type);
+}
+
+module.exports = { tailorResume, validateSuggestionAST };

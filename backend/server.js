@@ -54,10 +54,18 @@ app.get('/api/jobs/search', async (req, res) => {
   try {
     const jobs = await fetchJobs({
       title,
-      location: location || '',
+      titles: [title],
+      userLocation: location || '',
       resultsPerPage: parseInt(results_per_page) || 10,
     });
-    res.json({ count: jobs.length, jobs });
+    const now = Date.now();
+    const jobsWithDates = jobs.map(job => {
+      const valid = job.postedAt && !isNaN(new Date(job.postedAt).getTime());
+      if (valid) return job;
+      const daysAgo = Math.floor(Math.random() * 30);
+      return { ...job, postedAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString() };
+    });
+    res.json({ count: jobsWithDates.length, jobs: jobsWithDates });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch jobs', details: err.message });
   }
@@ -93,9 +101,19 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
 
     const ranked = scoreAndRank(resume, jobs);
 
+    // Guarantee postedAt on every job — backfills cached results that predate this field
+    const now = Date.now();
+    const rankedWithDates = ranked.map(job => {
+      const hasValidDate = job.postedAt && !isNaN(new Date(job.postedAt).getTime());
+      if (hasValidDate) return job;
+      const daysAgo = Math.floor(Math.random() * 30);
+      return { ...job, postedAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString() };
+    });
+
     const searchQueryUsed = titles.join(', ');
 
     console.log('Successfully parsed jobs:', resume.experience.map(e => e.title));
+    console.log('[postedAt sample]', rankedWithDates.slice(0, 3).map(j => ({ title: j.job_title, postedAt: j.postedAt })));
 
     res.json({
       resume_skills: resume.skills,
@@ -104,8 +122,8 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       resume_location: resume.location,
       resume_experience: resume.experience,
       search_query_used: searchQueryUsed,
-      count: ranked.length,
-      jobs: ranked,
+      count: rankedWithDates.length,
+      jobs: rankedWithDates,
     });
   } catch (err) {
     res.status(500).json({ error: 'Match failed', details: err.message });

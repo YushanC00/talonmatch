@@ -1,0 +1,129 @@
+# TalonMatch — Claude Rules
+
+These rules encode invariants that must be preserved across all refactors.
+Treat violations as bugs, not style issues.
+
+---
+
+## Core User Flows
+
+### 1. Auth-Action Intercept
+
+Guest users who click "Tailor Resume" must NEVER proceed to the AI tailoring flow.
+Instead, the AuthModal opens immediately.
+
+Before triggering the OAuth redirect, the app MUST persist:
+- `talonmatch_pending_resume`   → `{ skills, experience }` (for Supabase upsert post-login)
+- `talonmatch_pending_tailor_job` → the job URL string (for auto-trigger post-login)
+- `talonmatch_pending_results`  → the full results object (so matched jobs reappear after page reload)
+
+After `SIGNED_IN` fires in `App.jsx`:
+1. Restore all three keys from localStorage before calling `setRevealed(true)`
+2. Set `pendingTailorJobUrl` state to auto-trigger tailoring in `JobCard`
+3. `setRevealed(true)` must fire BEFORE the Supabase upsert — upsert is always fire-and-forget
+4. `JobCard` auto-triggers `handleTailor()` via `useEffect` when `isLoggedIn && pendingTailorJobUrl === job.url`
+
+Never gate `setRevealed(true)` on a network call.
+
+---
+
+### 2. Guest Identity
+
+When no session exists AND the feed is revealed (`revealed === true`), the Navbar MUST render
+the guest `UserMenu` avatar — a dashed-border circle with a `CircleUser` icon.
+
+The guest dropdown contains:
+- Skill count badge (if `parsedResume.skills.length > 0`): "N skills detected — sign in to save"
+- "Sign in to Save Skills" button (Google OAuth)
+- "New Search" item (only when `onNewSearch` prop is provided)
+
+Never render a plain text link or empty space in the top-right corner when a guest has an active session.
+`UserMenu` receives `user` (null for guests), `parsedResume`, `onNewSearch`, `onLogin`, `onSignOut`.
+
+---
+
+### 3. Modal Escape
+
+Every modal — upload overlay, AuthModal, TailoredResumeModal, JobDetailModal — MUST support:
+
+1. Visible close button (`×`) in the top-right corner
+2. Click-outside-to-close (backdrop click, with `e.stopPropagation()` on the card itself)
+3. `Escape` key closes the topmost modal
+
+Implementation pattern for Escape:
+```js
+useEffect(() => {
+  const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+  document.addEventListener('keydown', onKey);
+  return () => document.removeEventListener('keydown', onKey);
+}, [onClose]);
+```
+
+The upload overlay uses `handleOverlayClose` (sets `revealed=true` + optional guest notice).
+Closing the upload overlay as a guest shows the amber notice:
+"Your results won't be saved. Sign in via 'Tailor Resume' on any card to keep your matches."
+
+---
+
+### 4. Session Persistence
+
+On every page load, `onAuthStateChange` in `App.jsx` is the single source of truth for auth state.
+Never call `supabase.auth.getSession()` alongside `onAuthStateChange` — redundant and causes double-render.
+
+Event handling rules:
+- `INITIAL_SESSION` with session → restore silently (`setUser`, `setRevealed(true)`)
+- `INITIAL_SESSION` with null → no-op
+- `SIGNED_IN` → restore localStorage state, reveal, fire-and-forget upsert
+- `SIGNED_OUT` → reset all state (`user`, `results`, `revealed`)
+
+OAuth error handling: if the URL contains `error_description` or `error` params on page load,
+surface a red banner and strip the params from the URL via `window.history.replaceState`.
+Error copy: `"Sign-in failed: <decoded message>"`.
+
+Do NOT silently swallow auth errors or redirect loops.
+
+---
+
+### 5. Avatar Dropdown
+
+The `UserMenu` component is the canonical location for all account-level actions.
+No other component should render standalone versions of these actions.
+
+Logged-in dropdown must contain (in order):
+1. Identity header — avatar + full name + email (non-interactive)
+2. "New Search" (only when `onNewSearch` prop provided)
+3. "Profile Settings" (placeholder — no-op until settings page exists)
+4. Divider
+5. "Sign Out" (red/danger variant)
+
+Guest dropdown must contain:
+1. "Guest Session" header + skill count badge (conditional)
+2. "Sign in to Save Skills" (Google OAuth button)
+3. Divider + "New Search" (only when `onNewSearch` prop provided)
+
+`JobFeed` must NOT render any "New Search" button. That affordance lives exclusively in `UserMenu`.
+
+---
+
+## Implementation Constraints
+
+- `supabase.auth.signInWithOAuth` always uses `redirectTo: window.location.origin`
+- Google avatar `<img>` tags always carry `referrerPolicy="no-referrer"` to prevent 403s
+- The `subRef` pattern (pre-initialized mutable ref) is required for all `onAuthStateChange`
+  subscriptions inside component handlers — prevents TDZ errors in synchronous test mocks
+- Match scores are capped at 99% when `missingSkills.length > 0` and server returns 100% (honesty patch)
+- `postedAt` is guaranteed on every job — `ensurePostedAt()` runs on both upload results and background jobs
+
+---
+
+## Test Invariants
+
+These assertions must pass after every change:
+
+- Guest clicking "Tailor Resume" opens AuthModal (not the tailor editor)
+- AuthModal copy includes job-specific text when `jobTitle` prop is passed
+- `talonmatch_pending_resume` and `talonmatch_pending_tailor_job` are written to localStorage before OAuth redirect
+- `onPendingTailorHandled` is called (not the auth modal) when `isLoggedIn=true` and `pendingTailorJobUrl === job.url`
+- `UserMenu` guest trigger has `data-testid="guest-avatar-trigger"`
+- Skill count badge only appears when `parsedResume.skills.length > 0`
+- `JobFeed` never renders a "New Search" button

@@ -1,0 +1,44 @@
+{
+  "_comment": "TalonMatch Definition of Done — Claude Code enforces these rules on every task.",
+
+  "project": "TalonMatch",
+
+  "aesthetic": {
+    "name": "Zen Minimalism",
+    "rules": [
+      "NEVER use box-shadow utilities (shadow-sm, shadow-md, shadow-lg, shadow-xl). Use borders only.",
+      "All cards must use border-gray-100 or border-slate-200/60 as the resting border.",
+      "Card hover must trigger the clockwise green border-draw animation via the .job-card CSS class (color: #10B981).",
+      "Layout hierarchy and white-space references Glassdoor Web UI: generous padding, flat surfaces, restrained color."
+    ],
+    "forbidden_classes": ["shadow-sm", "shadow-md", "shadow-lg", "shadow-xl", "drop-shadow"]
+  },
+
+  "logic": {
+    "name": "Test-First",
+    "match_score_rules": {
+      "below_100": "Card MUST list missing skills (requirements_array minus parsedResume.skills). Never say 'all skills found' when match_score < 100.",
+      "exactly_100": "Hide the missing-skills section. Show 'You match all listed requirements.'",
+      "empty_requirements": "When requirements_array is empty or undefined, show the percentage + 'Requirements may not be fully listed' copy — never falsely claim 100% or 'all skills found'."
+    },
+    "automated_barrier": [
+      "Write the Vitest test case BEFORE writing feature code.",
+      "Run npm test (from frontend/) after every refactor.",
+      "Only present code once ALL tests are green."
+    ]
+  },
+
+  "technical": {
+    "dates": {
+      "rule": "ALL postedAt ISO strings must be transformed to relative strings via formatRelativeTime (e.g. '1w ago', '3d ago'). Raw ISO strings must never appear in the UI.",
+      "fallback": "If postedAt is null/undefined, render nothing — do not show a raw date or placeholder."
+    },
+    "pdf_parsing": {
+      "timeout_ms": 15000,
+      "error_toast": "Analysis taking longer than expected. Please try a smaller PDF.",
+      "rule": "Every /api/match fetch call must be wrapped in an AbortController with a 15-second timeout."
+    },
+    "test_command": "cd frontend && npm test",
+    "test_framework": "Vitest + @testing-library/react"
+  }
+}

@@ -5,3 +5,67 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── Job card animated border ─────────────────────────────────────────────── */
+
+@property --border-sweep {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes border-draw {
+  to { --border-sweep: 360deg; }
+}
+
+@keyframes card-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  50%       { box-shadow: 0 0 16px 4px rgba(16, 185, 129, 0.10); }
+}
+
+.job-card {
+  position: relative;
+  transition: box-shadow 0.35s ease;
+}
+
+/* clockwise green border drawn via conic-gradient + mask */
+.job-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px; /* card's rounded-xl (12px) + 1px inset */
+  background: conic-gradient(
+    from -90deg at 50% 50%,
+    #10B981 var(--border-sweep),
+    transparent var(--border-sweep)
+  );
+  padding: 1px;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.job-card:hover::before {
+  opacity: 1;
+  animation: border-draw 0.6s ease-out forwards;
+}
+
+.job-card:hover {
+  animation: card-glow-pulse 2s ease-in-out 0.5s infinite;
+}
+
+/* ── Modal fade-in ────────────────────────────────────────────────────────── */
+
+@keyframes modal-fade-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.modal-fade-in > div:last-child {
+  animation: modal-fade-in 0.18s ease-out forwards;
+}

@@ -35,6 +35,11 @@ function cacheSet(query, data) {
   }
 }
 
+function randomPostedAt(maxDaysAgo = 30) {
+  const ms = Math.floor(Math.random() * maxDaysAgo * 24 * 60 * 60 * 1000);
+  return new Date(Date.now() - ms).toISOString();
+}
+
 function getMockData() {
   if (fs.existsSync(MOCK_FILE)) {
     try { return JSON.parse(fs.readFileSync(MOCK_FILE, 'utf8')); } catch {}
@@ -49,6 +54,7 @@ function getMockData() {
       location: 'Toronto, Ontario, CA',
       is_remote: true,
       url: 'https://example.com/jobs/mock-1',
+      postedAt: randomPostedAt(),
     },
     {
       job_title: 'Principal UX Designer',
@@ -58,6 +64,7 @@ function getMockData() {
       location: 'Vancouver, BC, CA',
       is_remote: false,
       url: 'https://example.com/jobs/mock-2',
+      postedAt: randomPostedAt(),
     },
     {
       job_title: 'UX Manager',
@@ -67,6 +74,7 @@ function getMockData() {
       location: 'Remote',
       is_remote: true,
       url: 'https://example.com/jobs/mock-3',
+      postedAt: randomPostedAt(),
     },
   ];
 }
@@ -117,13 +125,14 @@ function transformJSearchJob(job) {
   const location = locationParts.join(', ') || 'Canada';
 
   return {
-    job_title:         job.job_title        || '',
-    company:           job.employer_name    || '',
-    description:       job.job_description  || '',
+    job_title:          job.job_title        || '',
+    company:            job.employer_name    || '',
+    description:        job.job_description  || '',
     requirements_array: extractRequirements(job.job_description, job.job_highlights),
     location,
-    is_remote:         Boolean(job.job_is_remote),
-    url:               job.job_apply_link   || job.job_google_link || '',
+    is_remote:          Boolean(job.job_is_remote),
+    url:                job.job_apply_link   || job.job_google_link || '',
+    postedAt:           job.job_posted_at_datetime_utc || null,
   };
 }
 
@@ -256,6 +265,7 @@ function transformRemotiveJob(job) {
     location:           candidateLocation  || 'Worldwide',
     is_remote:          true,
     url:                job.url            || '',
+    postedAt:           job.publication_date || null,
     _candidateLocation: candidateLocation,
   };
 }
@@ -281,11 +291,14 @@ async function fetchFromRemotive({ title, userLocation, resultsPerPage = 40 }) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 async function fetchJobs({ title, titles, userLocation, resultsPerPage = 10 }) {
+  let jobs;
   if (process.env.OPENWEBNINJA_KEY || process.env.RAPIDAPI_KEY) {
-    return fetchFromJSearch({ titles: titles?.length ? titles : [title], resultsPerPage });
+    jobs = await fetchFromJSearch({ titles: titles?.length ? titles : [title], resultsPerPage });
+  } else {
+    jobs = await fetchFromRemotive({ title, userLocation, resultsPerPage: resultsPerPage * 2 });
   }
-  // Remotive free fallback — remote jobs only
-  return fetchFromRemotive({ title, userLocation, resultsPerPage: resultsPerPage * 2 });
+  // Backfill postedAt for cached results that pre-date this field
+  return jobs.map(job => job.postedAt ? job : { ...job, postedAt: randomPostedAt() });
 }
 
 module.exports = { fetchJobs };
