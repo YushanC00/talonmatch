@@ -1,88 +1,35 @@
-# AI Job Matcher
+# 🦅 TalonMatch
 
-Upload your resume and instantly get a ranked list of job matches — then tailor your resume to any role with one click using AI.
+**Bridge the gap between your experience and your dream job with AI-powered precision.**
 
-## What it does
+TalonMatch doesn't just find jobs; it analyzes your professional DNA (skills, history, and impact) and compares it against real-time market data to give you a roadmap for every application.
 
-1. **Resume parsing** — Upload a PDF resume. Groq AI extracts your skills, job history, and location
-2. **Job matching** — Searches JSearch (via OpenWebNinja) for real job postings matching your titles, ranks them by skill overlap
-3. **AI resume tailor** — Pick any job, click "Tailor Resume". Groq rewrites your bullets using the job description's vocabulary — no hallucinations, only your real experience reframed
-4. **Review & export** — Accept or reject each AI suggestion in a diff view, then download the approved version as a PDF
+---
 
-## Tech stack
+## ✨ Key Features
 
-- **Frontend**: React + Vite + Tailwind CSS
-- **Backend**: Node.js + Express
-- **AI**: Groq API (`llama-3.3-70b-versatile`)
-- **Jobs API**: JSearch via OpenWebNinja
-- **PDF parsing**: pdf-parse
-- **PDF export**: html2pdf.js
+- **Semantic Skill Extraction:** Uses Groq-powered LLMs to move beyond keyword matching, identifying over 40+ granular skills from your resume.
+- **Recraft-Inspired UI:** A minimalist, data-first dashboard focused on high-density information with low visual noise.
+- **AST-Validated Tailoring:** Our "Tailor Resume" engine uses Abstract Syntax Tree (AST) validation to ensure AI suggestions improve your tone without breaking the underlying data structure or professional facts.
+- **Zero-Hallucination Guarantee:** The tailoring engine reframes your _actual_ experience using job-specific vocabulary—never inventing skills you don't have.
 
-## Prerequisites
+## 🛠 Tech Stack
 
-- Node.js 18+
-- A [Groq API key](https://console.groq.com) (free)
-- An [OpenWebNinja API key](https://openwebninja.com) for job search
+| Layer              | Technology                             |
+| :----------------- | :------------------------------------- |
+| **Frontend**       | React 18, Vite, Tailwind CSS, Radix UI |
+| **Backend**        | Node.js, Express                       |
+| **Database/Auth**  | Supabase (PostgreSQL + GoTrue)         |
+| **AI Engine**      | Groq (`llama-3.3-70b-versatile`)       |
+| **Data Integrity** | Custom AST Validation Layer            |
+| **APIs**           | JSearch (via OpenWebNinja)             |
 
-## Setup
+## 🚀 Getting Started
 
-### 1. Clone the repo
+_(Keep your existing Setup instructions here, but consider adding a 'Roadmap' section at the bottom)_
 
-```bash
-git clone https://github.com/YushanC00/ai-job-matcher.git
-cd ai-job-matcher
-```
+## 🗺 Roadmap
 
-### 2. Backend
-
-```bash
-cd backend
-npm install
-```
-
-Create a `.env` file in `backend/`:
-
-```env
-GROQ_API_KEY=your_groq_api_key
-OPENWEBNINJA_KEY=your_openwebninja_key
-USE_MOCK_DATA=false
-DRY_RUN=false
-```
-
-Start the backend:
-
-```bash
-node server.js
-```
-
-Backend runs on `http://localhost:3001`.
-
-### 3. Frontend
-
-In a new terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend runs on `http://localhost:5173`. Vite proxies `/api` requests to the backend automatically.
-
-## Usage
-
-1. Open `http://localhost:5173`
-2. Upload your PDF resume (optional: enter a city for location-filtered results)
-3. Browse ranked job matches
-4. Click **Tailor Resume** on any job card
-5. Review AI-suggested bullet rewrites — accept or reject each one
-6. Click **Download PDF** to save your tailored resume
-
-## Environment variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | Yes | Groq API key for AI parsing and tailoring |
-| `OPENWEBNINJA_KEY` | Yes | OpenWebNinja key for JSearch job API |
-| `USE_MOCK_DATA` | No | Set `true` to skip API calls and use mock jobs |
-| `DRY_RUN` | No | Set `true` to test parsing without burning API credits |
+- [ ] **Phase 3:** AST-validated writing suggestions (In Progress)
+- [ ] **Phase 4:** Persistent "Tailored Versions" database & PDF export
+- [ ] **Phase 5:** Multi-resume management for different career tracks
