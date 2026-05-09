@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import JobCard from './JobCard';
 
+vi.mock('../lib/fetchApplication', () => ({
+  fetchApplication: vi.fn().mockResolvedValue(null),
+}));
+
 const baseJob = {
   job_title: 'Senior UX Designer',
   company: 'Acme Corp',
@@ -129,35 +133,70 @@ describe('JobCard — match tier buttons', () => {
   });
 });
 
-describe('JobCard — Remote ribbon', () => {
-  it('shows ribbon when is_remote is true', () => {
+describe('JobCard — Remote indicator (inline)', () => {
+  it('shows indicator when is_remote is true', () => {
     const job = { ...baseJob, is_remote: true };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} />);
-    expect(screen.getByTestId('remote-ribbon')).toBeInTheDocument();
+    expect(screen.getByTestId('remote-indicator')).toBeInTheDocument();
   });
 
-  it('shows ribbon when location contains "Remote"', () => {
+  it('shows indicator when location contains "Remote"', () => {
     const job = { ...baseJob, is_remote: false, location: 'Remote, Worldwide' };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} />);
-    expect(screen.getByTestId('remote-ribbon')).toBeInTheDocument();
+    expect(screen.getByTestId('remote-indicator')).toBeInTheDocument();
   });
 
-  it('shows ribbon when job_title contains "Remote"', () => {
+  it('shows indicator when job_title contains "Remote"', () => {
     const job = { ...baseJob, is_remote: false, job_title: 'Remote Senior UX Designer' };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} />);
-    expect(screen.getByTestId('remote-ribbon')).toBeInTheDocument();
+    expect(screen.getByTestId('remote-indicator')).toBeInTheDocument();
   });
 
-  it('shows ribbon when description mentions remote', () => {
+  it('shows indicator when description mentions remote', () => {
     const job = { ...baseJob, is_remote: false, description: 'This is a remote-first role.' };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} />);
-    expect(screen.getByTestId('remote-ribbon')).toBeInTheDocument();
+    expect(screen.getByTestId('remote-indicator')).toBeInTheDocument();
   });
 
-  it('hides ribbon for on-site job', () => {
+  it('hides indicator for on-site job', () => {
     const job = { ...baseJob, is_remote: false, location: 'Toronto, ON', description: 'On-site only.' };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} />);
-    expect(screen.queryByTestId('remote-ribbon')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('remote-indicator')).not.toBeInTheDocument();
+  });
+});
+
+describe('JobCard — Tailored ghost badge', () => {
+  it('shows ghost badge when isTailored', () => {
+    render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={true} />);
+    const badge = screen.getByTestId('tailored-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('Tailored');
+  });
+
+  it('hides ghost badge when not tailored', () => {
+    render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={false} />);
+    expect(screen.queryByTestId('tailored-badge')).not.toBeInTheDocument();
+  });
+});
+
+describe('JobCard — Tailored action buttons', () => {
+  it('shows "Ready to Apply" link and "Edit Version" button when tailored', () => {
+    render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={true} />);
+    expect(screen.getByText(/ready to apply/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit version/i })).toBeInTheDocument();
+  });
+
+  it('hides tailored buttons when not tailored', () => {
+    render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={false} />);
+    expect(screen.queryByText(/ready to apply/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit version/i })).not.toBeInTheDocument();
+  });
+
+  it('hides "Ready to Apply" link when url is empty', () => {
+    const job = { ...baseJob, url: '' };
+    render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={true} />);
+    expect(screen.queryByText(/ready to apply/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit version/i })).toBeInTheDocument();
   });
 });
 

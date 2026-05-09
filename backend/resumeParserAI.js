@@ -16,6 +16,7 @@ Return ONLY this JSON — no markdown, no extra keys:
   "location": "City, Province/State or empty string",
   "city": "City name only or empty string",
   "province": "Province or State abbreviation only or empty string",
+  "country": "Two-letter ISO country code (CA, US, GB, AU, etc.) inferred from city/province context, or empty string",
   "experience": [
     {
       "title": "Job title",
@@ -66,6 +67,7 @@ async function parseResumeAI(rawText) {
     location: parsed.location || '',
     city: parsed.city || '',
     province: parsed.province || '',
+    country: parsed.country || '',
     experience: (parsed.experience || []).map(e => ({
       title: e.title || '',
       company: e.company || '',

@@ -10,6 +10,10 @@ vi.mock('html2pdf.js', () => ({
   })),
 }));
 
+vi.mock('../lib/saveApplication', () => ({
+  saveApplication: vi.fn().mockResolvedValue(undefined),
+}));
+
 const SUMMARY_DATA = {
   original_text: 'Experienced developer.',
   tailored_text: 'Experienced React developer focused on scalable UIs.',

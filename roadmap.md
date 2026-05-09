@@ -1,57 +1,60 @@
-# 🚀 TalonMatch Weekend Sprint: From Tool to Agent
+# 🚀 TalonMatch | AI-Powered Career Agent
 
-This roadmap outlines the transition of TalonMatch from a job-search UI to a fully automated, AI-powered career agent.
+## 🎯 Core Operating Principles (AI Guardrails)
 
-## 📅 Saturday: The "High-Trust" Engine
-
-**Focus:** Stability, UX Refinement, and Data Persistence.
-
-### 1. Data Infrastructure & Persistence
-
-- [ ] **Application Versioning:** Create an `applications` table in the DB to save every "Committed" resume with a timestamp.
-- [ ] **Base Resume Snapshots:** Implement logic to save the "Master" JSON upon PDF upload to serve as the source of truth for all future tailoring.
-- [ ] **Style DNA Extraction:** Develop a GROQ utility to analyze PDF metadata (fonts, spacing, layout) and store it as a `style_config`.
-
-### 2. The "Intelligent Drawer" UX
-
-- [ ] **Multi-Section Tailoring:** Expand GROQ engine to tailor Summary, Experience, and Projects in a single pass.
-- [ ] **Segmented Review:** Break the drawer into cards for each section with independent **[Accept]** and **[Cancel]** controls.
-- [ ] **Feedback Loop:** Log user manual edits to improve future AI suggestions based on "Professional Voice" patterns.
-
-### 3. Branding & UI Polish
-
-- [ ] **"Out-of-Box" Ribbon:** Fix the clipping bug on the "Remote" tag using an absolute-positioned "Bookmark" style.
-- [ ] **Professional Palette:** Standardize on **Emerald (Success)** and **Slate (Neutral)** colors.
-- [ ] **Live Match Score:** Animate the score in the drawer to update in real-time as the user accepts tailoring.
+- **Dynamic Anchoring:** Extract `city`, `province`, and `country` from the user's uploaded resume. Use this as the search "Home Base." Do NOT hardcode locations.
+- **Rule 11 (Data Integrity):** AI is strictly forbidden from altering dates, company names, or years of experience. Tailoring must focus only on skill alignment and bullet point optimization.
+- **Token Efficiency:** Follow the **Plan -> Verify -> Execute** loop. Provide a step-by-step implementation plan and wait for user approval before writing code.
+- **Performance First:** All UI components (especially the Drawer) must use memoization to ensure sub-100ms response times during AI streaming.
 
 ---
 
-## 📅 Sunday: The "Autopilot" Launch
+## 📅 Phase 1: High-Trust Engine (Saturday Sprint)
 
-**Focus:** PDF Generation, Progress Tracking, and Market Automation.
+### 1. Data & Location Intelligence
+
+- [done] **Home Base Detection:** Implement logic to set the primary search filter based on the uploaded resume's location data.
+- [done] **Concentric Search Fallback:** - If `Primary Location` results < 5, auto-expand search to the `Province/State` level.
+  - Always merge `Remote, [Country]` results into the primary feed.
+- [done] **Application Persistence:** Create a `applications` table in the database to store tailored resumes with a `timestamp` and `job_id`.
+- [done] **Cache Management:** Implement a manual "Clear Cache" trigger to refresh job data from the API.
+
+### 2. The "Review Station" Drawer
+
+- [ ] **Full-Resume Tailoring:** Expand GROQ logic to tailor the **entire resume** (Summary, Experience, and Projects) in one structured JSON pass.
+- [ ] **Section-Level Controls:** - Implement independent `[Accept]` and `[Cancel]` buttons for every block of text.
+  - Add a "Manual Edit" mode for final user polishing.
+- [ ] **Live Match Score:** Animate the Match % in the drawer header to increase in real-time as AI optimizations are accepted.
+- [ ] **UX Polish:** Fix the "Remote" bookmark clipping and remove redundant company info from the drawer header.
+
+### 3. Performance Optimization
+
+- [ ] **Skeleton UI:** Implement skeleton loading states for resume sections while GROQ is streaming.
+- [ ] **Memoization:** Use `React.memo` on DiffViewer components to prevent lag during text edits.
+
+---
+
+## 📅 Phase 2: Autopilot & Branding (Sunday Sprint)
 
 ### 1. The PDF Re-Styler
 
-- [ ] **Template Engine:** Build a dynamic PDF generator that uses the `style_config` and `tailored_json` to replicate the user's original design.
-- [ ] **One-Click Download:** Finalize the "Download PDF" action in the drawer for committed versions.
+- [ ] **Design DNA Extraction:** Use GROQ to analyze the original PDF's structure (Fonts, Margins, Layout) and save as a `style_config` object.
+- [ ] **Dynamic Generation:** Use `react-pdf` to inject tailored text into a layout that mirrors the user's original design perfectly.
 
-### 2. Automation & "Dirty Apply"
+### 2. Autosend Protocol
 
-- [ ] **Direct Apply Protocol:** Implement a button that "bundles" the tailored resume and opens the job source URL in a new tab.
-- [ ] **The "Autosend" Bot:** \* Develop a background worker to monitor the job feed.
-  - Trigger automatic applications for jobs where **Match Score > User Threshold** (e.g., 85%).
-- [ ] **User Rules of Engagement:** Create a settings panel for "Autosend" conditions (Salary floor, daily limits, keyword blacklists).
+- [ ] **Condition-Based Applying:** Panel for users to set "Autosend" rules (e.g., Match Score > 85%, Salary floor).
+- [ ] **The "Dirty" Apply:** A one-click button that saves the application state and opens the job URL in a new tab for instant pasting.
 
-### 3. The Progress Dashboard
+### 3. Progress Dashboard
 
-- [ ] **Timeline View:** Create a new page to view all previous applications, timestamps, and current status.
-- [ ] **Historical Recall:** Allow users to view and re-download any previously tailored version of their resume.
+- [ ] **Timeline View:** Create a page to view all previous applications, timestamps, and status (Tailored, Applied, Interviewing).
 
 ---
 
 ## 🛠️ Technical Stack
 
-- **LLM:** GROQ (Llama 3 / Mixtral) for low-latency tailoring.
-- **Frontend:** React + Tailwind CSS + Lucide Icons.
-- **Backend:** Supabase / PostgreSQL.
-- **PDF:** `react-pdf` or `jspdf`.
+- **LLM:** [GROQ](https://groq.com/) (Llama 3 / Mixtral)
+- **Database:** [Supabase](https://supabase.com/) / PostgreSQL
+- **Frontend:** Vite + React + [Tailwind CSS](https://tailwindcss.com/)
+- **Icons:** [Lucide React](https://lucide.dev/)

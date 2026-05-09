@@ -9,6 +9,7 @@ const { parseResumeAI } = require('./resumeParserAI');
 const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { tailorResume } = require('./tailorResume');
+const { clearCache } = require('./jobFetcher');
 
 const app = express();
 app.use(cors());
@@ -96,12 +97,21 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       ? `${resume.city}, ${resume.province}`
       : resume.location || '';
 
-    console.log('[location] raw location:', resume.location, '| city:', resume.city, '| province:', resume.province, '| userLocation used:', userLocation || '(empty — will search Remote)');
+    const PROVINCE_TO_COUNTRY = {
+      BC: 'CA', AB: 'CA', ON: 'CA', QC: 'CA', MB: 'CA', SK: 'CA',
+      NS: 'CA', NB: 'CA', NL: 'CA', PE: 'CA', NT: 'CA', YT: 'CA', NU: 'CA',
+    };
+    const country = resume.country
+      || PROVINCE_TO_COUNTRY[(resume.province || '').toUpperCase()]
+      || 'CA';
+
+    console.log('[location] raw location:', resume.location, '| city:', resume.city, '| province:', resume.province, '| country:', country, '| userLocation used:', userLocation || '(empty — will search Remote)');
 
     const jobs = await fetchJobs({
       title: titles[0],
       titles,
       userLocation,
+      country,
       resultsPerPage: parseInt(results_per_page) || 10,
     });
 
@@ -156,6 +166,16 @@ app.post('/api/tailor-resume', async (req, res) => {
   } catch (err) {
     console.error('AI API ERROR:', err);
     res.status(500).json({ error: 'Tailoring failed', details: err.message });
+  }
+});
+
+app.delete('/api/cache/clear', (req, res) => {
+  try {
+    const cleared = clearCache();
+    console.log(`[cache] cleared ${cleared} file(s)`);
+    res.json({ cleared });
+  } catch (err) {
+    res.status(500).json({ error: 'Cache clear failed', details: err.message });
   }
 });
 

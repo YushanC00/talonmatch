@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Wind, SlidersHorizontal, Briefcase, Zap } from 'lucide-react';
+import { Wind, SlidersHorizontal, Briefcase, Zap, RefreshCw } from 'lucide-react';
 import ResumeUpload from './components/ResumeUpload';
 import JobFeed from './components/JobFeed';
 import GoogleSignIn from './components/GoogleSignIn';
@@ -98,9 +98,28 @@ export default function App() {
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [syncToast, setSyncToast] = useState(false);
+  const [tailoredJobIds, setTailoredJobIds] = useState(new Set());
+  const lastFileRef = useRef(null);
+
   // Ref so the auth listener always sees the latest results without re-subscribing
   const resultsRef = useRef(null);
   useEffect(() => { resultsRef.current = results; }, [results]);
+
+  // Load existing tailored job IDs when user is authenticated
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from('applications').select('job_id').eq('user_id', user.id)
+      .then(({ data }) => {
+        if (data?.length) setTailoredJobIds(new Set(data.map(a => a.job_id)));
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
+  const handleCommitTailoring = (jobId) => {
+    setTailoredJobIds(prev => new Set([...prev, jobId]));
+  };
 
   // Escape closes upload overlay
   useEffect(() => {
@@ -214,7 +233,23 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleRefreshJobs = async () => {
+    if (!lastFileRef.current) return;
+    setRefreshing(true);
+    try {
+      await fetch('/api/cache/clear', { method: 'DELETE' });
+      await handleSubmit({ file: lastFileRef.current });
+      setSyncToast(true);
+      setTimeout(() => setSyncToast(false), 3000);
+    } catch (err) {
+      setError(err.message ?? String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleSubmit = async ({ file }) => {
+    lastFileRef.current = file;
     setLoading(true);
     setError('');
 
@@ -340,6 +375,17 @@ export default function App() {
                   <span className="tabular-nums font-semibold text-gray-800">{skillsCount}</span>
                   <span className="text-gray-400">skills</span>
                 </span>
+              )}
+              {results && (
+                <button
+                  onClick={handleRefreshJobs}
+                  disabled={refreshing}
+                  title="Clear cache and re-fetch fresh job results"
+                  className="select-auto flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium transition-colors cursor-pointer text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw size={10} strokeWidth={2} className={refreshing ? 'animate-spin' : ''} />
+                  {refreshing ? 'Syncing…' : 'Sync'}
+                </button>
               )}
             </div>
           )}
@@ -487,6 +533,8 @@ export default function App() {
               onSaveBeforeRedirect={handleSaveBeforeRedirect}
               pendingTailorJobUrl={pendingTailorJobUrl}
               onPendingTailorHandled={() => setPendingTailorJobUrl(null)}
+              tailoredJobIds={tailoredJobIds}
+              onCommitTailoring={handleCommitTailoring}
               />
           ) : (
             /* Shimmer skeleton while background jobs load */
@@ -583,6 +631,15 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {syncToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-full border border-green-200 bg-green-50 text-green-700 text-xs font-medium pointer-events-none">
+          <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          Job data synchronized.
+        </div>
+      )}
     </div>
   );
 }

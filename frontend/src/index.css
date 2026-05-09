@@ -59,6 +59,39 @@ body {
   animation: card-glow-pulse 2s ease-in-out 0.5s infinite;
 }
 
+@keyframes card-glow-pulse-indigo {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  50%       { box-shadow: 0 0 18px 5px rgba(99, 102, 241, 0.10); }
+}
+
+/* Tailored cards: indigo sweep + always-on breathing glow */
+.job-card--tailored::before {
+  background: conic-gradient(
+    from -90deg at 50% 50%,
+    #6366F1 var(--border-sweep),
+    transparent var(--border-sweep)
+  );
+}
+
+.job-card--tailored {
+  animation: card-glow-pulse-indigo 3s ease-in-out 0s infinite;
+}
+
+.job-card--tailored:hover {
+  animation: card-glow-pulse-indigo 2s ease-in-out 0.5s infinite;
+}
+
+/* ── Card action fade-in (tailored button swap) ──────────────────────────── */
+
+@keyframes action-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.action-fade-in {
+  animation: action-fade-in 0.22s ease-out forwards;
+}
+
 /* ── Modal fade-in ────────────────────────────────────────────────────────── */
 
 @keyframes modal-fade-in {

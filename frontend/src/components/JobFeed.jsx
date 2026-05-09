@@ -3,7 +3,8 @@ import JobCard from './JobCard';
 import JobDetailModal from './JobDetailModal';
 
 export default function JobFeed({ jobs = [], totalJobs = 0, parsedResume, isLoggedIn = false, onLogin,
-  onSaveBeforeRedirect, pendingTailorJobUrl, onPendingTailorHandled }) {
+  onSaveBeforeRedirect, pendingTailorJobUrl, onPendingTailorHandled,
+  tailoredJobIds, onCommitTailoring }) {
   const [selectedJob, setSelectedJob] = useState(null);
 
   if (!jobs.length) {
@@ -40,6 +41,8 @@ export default function JobFeed({ jobs = [], totalJobs = 0, parsedResume, isLogg
             onSaveBeforeRedirect={onSaveBeforeRedirect}
             pendingTailorJobUrl={pendingTailorJobUrl}
             onPendingTailorHandled={onPendingTailorHandled}
+            isTailored={tailoredJobIds?.has(job.url) ?? false}
+            onCommitTailoring={onCommitTailoring}
           />
         ))}
       </div>
