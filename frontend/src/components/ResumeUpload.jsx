@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 
 export default function ResumeUpload({ onSubmit, loading }) {
-  const [file, setFile] = useState(null);
-  const [dragging, setDragging] = useState(false);
+  const [file, setFile]           = useState(null);
+  const [dragging, setDragging]   = useState(false);
   const [fieldError, setFieldError] = useState('');
   const inputRef = useRef(null);
 
@@ -22,54 +22,76 @@ export default function ResumeUpload({ onSubmit, loading }) {
     acceptFile(e.dataTransfer.files[0]);
   }, [acceptFile]);
 
-  const onDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const onDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!file) return setFieldError('Please select a PDF resume.');
+    if (!file) return setFieldError('Select a PDF resume first.');
     setFieldError('');
     onSubmit({ file });
   };
 
+  const dropzoneStyle = {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', gap: 16,
+    padding: '40px 24px',
+    border: `1px dashed ${dragging || file ? 'var(--moss)' : 'var(--rule)'}`,
+    borderRadius: 0,
+    background: dragging
+      ? 'var(--washi-soft)'
+      : file
+      ? 'rgba(90,122,78,0.06)'
+      : 'var(--washi-soft)',
+    cursor: 'pointer',
+    transition: 'border-color 150ms ease, background 150ms ease',
+    userSelect: 'none',
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
       {/* Drop zone */}
       <div
+        style={dropzoneStyle}
         onClick={() => inputRef.current?.click()}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
-        className={`relative flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed px-8 py-12 cursor-pointer transition-all select-none
-          ${dragging
-            ? 'border-green-400 bg-green-50'
-            : file
-            ? 'border-green-400 bg-green-50'
-            : 'border-gray-200 bg-white hover:border-green-300 hover:bg-gray-50'
-          }`}
       >
         <input
           ref={inputRef}
           type="file"
           accept="application/pdf"
-          className="hidden"
+          style={{ display: 'none' }}
           onChange={(e) => acceptFile(e.target.files[0])}
         />
 
         {file ? (
           <>
-            <div className="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center">
-              <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-gray-900">{file.name}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Ready to analyze</p>
+            {/* File doc icon */}
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <rect x="5" y="2" width="14" height="24" rx="0" stroke="var(--moss)" strokeWidth="1.5"/>
+              <path d="M19 2 L23 6" stroke="var(--moss)" strokeWidth="1.5" strokeLinecap="square"/>
+              <rect x="19" y="2" width="4" height="4" rx="0" stroke="var(--moss)" strokeWidth="1.5"/>
+              <path d="M9 11 H19 M9 15 H19 M9 19 H14" stroke="var(--moss)" strokeWidth="1.2" strokeLinecap="square"/>
+            </svg>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 600, color: 'var(--sumi)', margin: 0 }}>
+                {file.name}
+              </p>
+              <p className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.14em', color: 'var(--moss)', marginTop: 4, textTransform: 'uppercase' }}>
+                Ready to scan
+              </p>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setFile(null); }}
-                className="text-xs text-gray-400 hover:text-red-500 transition-colors mt-2 underline underline-offset-2"
+                style={{
+                  marginTop: 8, fontFamily: 'Inter', fontSize: 11,
+                  color: 'var(--sumi-faint)', background: 'none',
+                  border: 'none', cursor: 'pointer', textDecoration: 'underline',
+                  textUnderlineOffset: 2,
+                }}
               >
                 Remove
               </button>
@@ -77,45 +99,65 @@ export default function ResumeUpload({ onSubmit, loading }) {
           </>
         ) : (
           <>
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
-              <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-gray-800">
-                Drop your resume here or{' '}
-                <span className="text-green-600 hover:text-green-700">browse</span>
+            {/* Minimalist arrow-up icon */}
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <path d="M14 22 V6" stroke="var(--sumi-mute)" strokeWidth="1.8" strokeLinecap="square"/>
+              <path d="M7 13 L14 6 L21 13" stroke="var(--sumi-mute)" strokeWidth="1.8" strokeLinecap="square" strokeLinejoin="miter"/>
+            </svg>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 500, color: 'var(--sumi)', margin: 0 }}>
+                Drop resume here or{' '}
+                <span style={{ color: 'var(--moss)', fontWeight: 600 }}>browse</span>
               </p>
-              <p className="text-xs text-gray-400 mt-1">PDF only · max 10 MB</p>
+              <p className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.14em', color: 'var(--sumi-faint)', marginTop: 6, textTransform: 'uppercase' }}>
+                PDF only · max 10 MB
+              </p>
             </div>
           </>
         )}
       </div>
 
       {fieldError && (
-        <p className="text-sm text-red-500">{fieldError}</p>
+        <p style={{ fontFamily: 'Inter', fontSize: 12, color: 'var(--shu)', margin: 0 }}>{fieldError}</p>
       )}
 
+      {/* Submit */}
       <button
         type="submit"
         disabled={loading}
-        className="flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold bg-green-600 text-white hover:bg-green-700 active:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+          padding: '11px 20px',
+          background: loading ? 'var(--moss-soft)' : 'var(--moss)',
+          color: 'var(--paper)',
+          border: 'none', borderRadius: 0,
+          fontFamily: '"JetBrains Mono", monospace',
+          fontSize: 10, fontWeight: 600,
+          letterSpacing: '0.22em', textTransform: 'uppercase',
+          cursor: loading ? 'wait' : 'pointer',
+          opacity: loading ? 0.7 : 1,
+          transition: 'opacity 150ms ease',
+        }}
       >
         {loading ? (
           <>
-            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Analyzing your resume...
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25"/>
+              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="square"/>
+            </svg>
+            Scanning…
           </>
         ) : (
           <>
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M7 11 V3 M7 3 L3 7 M7 3 L11 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="square" strokeLinejoin="miter"/>
             </svg>
-            Find Matching Jobs
+            Execute Initial Scan
           </>
         )}
       </button>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </form>
   );
 }

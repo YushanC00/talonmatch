@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Wind, SlidersHorizontal, Briefcase, Zap, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import ResumeUpload from './components/ResumeUpload';
 import JobFeed from './components/JobFeed';
 import GoogleSignIn from './components/GoogleSignIn';
@@ -8,15 +8,54 @@ import { supabase } from './lib/supabase';
 import { resolveCity } from './utils/geolocation';
 import './index.css';
 
-function TalonMatchLogo({ size = 'md' }) {
-  const iconSize = size === 'lg' ? 22 : 18;
-  const textClass = size === 'lg' ? 'text-2xl' : 'text-lg';
+function TalonMark({ size = 36 }) {
   return (
-    <div className="flex items-center gap-2">
-      <Wind size={iconSize} className="text-green-600 shrink-0" strokeWidth={2} />
-      <span className={`${textClass} tracking-tight`}>
-        <span className="font-extrabold text-gray-900">Talon</span>
-        <span className="font-normal text-gray-700">Match</span>
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+      <defs><clipPath id="seal-clip"><circle cx="32" cy="32" r="29" /></clipPath></defs>
+      <rect x="3" y="3" width="58" height="58" rx="6" fill="var(--shu)" />
+      <g clipPath="url(#seal-clip)" fill="none" stroke="var(--paper)" strokeWidth="3.2" strokeLinecap="round">
+        <path d="M14 18 C 24 26, 30 34, 30 50" />
+        <path d="M28 12 C 34 24, 36 36, 34 52" />
+        <path d="M46 16 C 42 26, 40 36, 40 50" />
+        <path d="M30 50 l 3 -2 M30 50 l -3 -1" strokeWidth="2.6" />
+        <path d="M34 52 l 3 -2 M34 52 l -3 -1" strokeWidth="2.6" />
+        <path d="M40 50 l 3 -2 M40 50 l -3 -1" strokeWidth="2.6" />
+      </g>
+      <rect x="3" y="3" width="58" height="58" rx="6" fill="none" stroke="var(--shu-deep)" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function TalonMatchLogo({ size = 'md' }) {
+  const markSize = size === 'lg' ? 48 : 44;
+  const titleSize = size === 'lg' ? 24 : 26;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <TalonMark size={markSize} />
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span className="tm-mincho" style={{ fontSize: titleSize, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--sumi)' }}>
+            Talon<span style={{ color: 'var(--shu)' }}>Match</span>
+          </span>
+          <span className="tm-jp" style={{ fontSize: 14, color: 'var(--sumi-mute)', fontWeight: 500 }}>鷹合</span>
+        </div>
+        <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.32em', color: 'var(--sumi-mute)', marginTop: 5, textTransform: 'uppercase' }}>
+          Find · Tailor · Strike
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SideOrnament({ side }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 140, [side]: 14,
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      pointerEvents: 'none', writingMode: 'vertical-rl', zIndex: 5,
+    }}>
+      <span className="tm-jp" style={{ fontSize: 12, letterSpacing: '0.4em', color: 'var(--sumi-mute)', fontWeight: 400, opacity: 0.5 }}>
+        {side === 'left' ? '好機を逃すな' : '鷹の目で狙え'}
       </span>
     </div>
   );
@@ -75,9 +114,9 @@ const DATE_WINDOWS_MS = {
 };
 
 const SORT_OPTIONS = [
-  { value: 'match_score', label: 'Best Match' },
-  { value: 'company',     label: 'Company A–Z' },
-  { value: 'job_title',   label: 'Title A–Z' },
+  { value: 'match_score', label: 'Match' },
+  { value: 'company',     label: 'Company' },
+  { value: 'job_title',   label: 'Title' },
 ];
 
 export default function App() {
@@ -351,143 +390,145 @@ export default function App() {
     });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
+      <SideOrnament side="left" />
+      <SideOrnament side="right" />
+
       {/* Header */}
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10 h-14">
-        <div className="relative max-w-6xl mx-auto h-full flex items-center px-6">
+      <header style={{ background: 'var(--paper)', borderBottom: '1px solid var(--rule)', position: 'sticky', top: 0, zIndex: 10 }}>
 
-          {/* Left: Logo */}
-          <TalonMatchLogo />
+        {/* Patterned shu stripe */}
+        <div style={{ height: 3, background: 'linear-gradient(to right, var(--shu) 0%, var(--shu) 24%, transparent 24%, transparent 30%, var(--shu) 30%, var(--shu) 32%, transparent 32%)' }} />
 
-          {/* Center: Stat pills — absolutely centered so unaffected by left/right widths */}
-          {revealed && displayJobs.length > 0 && (
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 select-none">
-              <span className="flex items-center gap-1.5 h-7 px-3 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-gray-600">
-                <Briefcase size={11} strokeWidth={2} className="text-gray-400 shrink-0" />
-                <span className="tabular-nums font-semibold text-gray-800">{filteredJobs.length}</span>
-                <span className="text-gray-400">
-                  {filteredJobs.length < displayJobs.length ? `of ${displayJobs.length} jobs` : 'jobs'}
-                </span>
-              </span>
-              {skillsCount > 0 && (
-                <span className="flex items-center gap-1.5 h-7 px-3 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-gray-600">
-                  <Zap size={11} strokeWidth={2} className="text-gray-400 shrink-0" />
-                  <span className="tabular-nums font-semibold text-gray-800">{skillsCount}</span>
-                  <span className="text-gray-400">skills</span>
-                </span>
+        {/* Main row — wings layout: logo centered, controls right */}
+        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '16px 40px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+
+          {/* Center: Logo — truly centered via absolute */}
+          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+            <TalonMatchLogo />
+          </div>
+
+          {/* Right: controls (always visible) */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+
+            {/* Filters button + dropdown */}
+            <div style={{ position: 'relative' }} ref={filtersRef}>
+              <button
+                onClick={() => setShowFilters(f => !f)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: showFilters ? 'var(--washi-deep)' : 'var(--paper)',
+                  border: '1px solid var(--rule)', padding: '9px 14px', borderRadius: 2,
+                  cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--sumi)',
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 3 H12 M4 7 H10 M6 11 H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+                Filters
+                {filtersActive && (
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--shu)', display: 'inline-block', flexShrink: 0 }} />
+                )}
+              </button>
+
+              {showFilters && (
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, zIndex: 50, width: 208, padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Match */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--sumi-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>Match</p>
+                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                      {[{ v: 0, l: 'All' }, { v: 60, l: '60%+' }, { v: 80, l: '80%+' }].map(({ v, l }, i, arr) => (
+                        <button key={v} onClick={() => setMinScore(v)}
+                          style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter',
+                            borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none', border: 'none',
+                            background: minScore === v ? 'var(--sumi)' : 'transparent',
+                            color: minScore === v ? 'var(--paper)' : 'var(--sumi-mute)',
+                          }}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Posted */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--sumi-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>Posted</p>
+                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                      {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }, i, arr) => (
+                        <button key={v} onClick={() => setDateFilter(v)}
+                          style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter',
+                            borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none', border: 'none',
+                            background: dateFilter === v ? 'var(--sumi)' : 'transparent',
+                            color: dateFilter === v ? 'var(--paper)' : 'var(--sumi-mute)',
+                          }}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               )}
+            </div>
+
+            {/* Upload résumé */}
+            <button
+              onClick={handleReset}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--sumi)', color: 'var(--washi-soft)', border: 'none',
+                padding: '9px 14px', borderRadius: 2, cursor: 'pointer',
+                fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 6 L 6 3 L 9 6 M 6 3 V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              Upload résumé
+            </button>
+
+            {/* Vertical rule */}
+            <div style={{ width: 1, height: 28, background: 'var(--rule)' }} />
+
+            {/* Avatar */}
+            <UserMenu
+              user={user}
+              parsedResume={parsedResume}
+              onNewSearch={handleReset}
+              onLogin={handleLogin}
+              onSignOut={() => { setUser(null); setRevealed(false); setResults(null); }}
+            />
+          </div>
+        </div>
+
+        {/* Sort sub-bar — shown when jobs are revealed */}
+        {revealed && displayJobs.length > 0 && (
+          <div style={{ borderTop: '1px solid var(--rule)', background: 'var(--washi-deep)' }}>
+            <div style={{ maxWidth: 1320, margin: '0 auto', padding: '8px 40px', display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+              <span className="tm-mono" style={{ letterSpacing: '0.18em', textTransform: 'uppercase', fontSize: 10, color: 'var(--sumi-mute)' }}>Sort</span>
+              {SORT_OPTIONS.map(({ value, label }) => (
+                <button key={value} onClick={() => setSortBy(value)}
+                  style={{
+                    background: sortBy === value ? 'var(--sumi)' : 'transparent',
+                    color: sortBy === value ? 'var(--paper)' : 'var(--sumi)',
+                    border: sortBy === value ? '1px solid var(--sumi)' : '1px solid var(--rule)',
+                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                    fontFamily: 'Inter', fontSize: 11, fontWeight: 500,
+                  }}>
+                  {label}
+                </button>
+              ))}
               {results && (
-                <button
-                  onClick={handleRefreshJobs}
-                  disabled={refreshing}
+                <button onClick={handleRefreshJobs} disabled={refreshing}
                   title="Clear cache and re-fetch fresh job results"
-                  className="select-auto flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium transition-colors cursor-pointer text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 2, cursor: 'pointer',
+                    border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', fontFamily: 'Inter', fontSize: 11,
+                    opacity: refreshing ? 0.5 : 1 }}>
                   <RefreshCw size={10} strokeWidth={2} className={refreshing ? 'animate-spin' : ''} />
                   {refreshing ? 'Syncing…' : 'Sync'}
                 </button>
               )}
             </div>
-          )}
-
-          {/* Right: Filter dropdown + Avatar */}
-          {revealed && (
-            <div className="ml-auto flex items-center gap-2.5">
-
-              {/* Consolidated filter dropdown */}
-              <div className="relative" ref={filtersRef}>
-                <button
-                  onClick={() => setShowFilters(f => !f)}
-                  className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium transition-colors cursor-pointer ${
-                    showFilters
-                      ? 'border-gray-400 bg-gray-100 text-gray-900'
-                      : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <SlidersHorizontal size={11} strokeWidth={2} />
-                  Filters
-                  {filtersActive && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-                  )}
-                </button>
-
-                {showFilters && (
-                  <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl z-50 w-52 p-3 space-y-3.5">
-
-                    {/* Match */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Match</p>
-                      <div className="flex rounded-md overflow-hidden border border-gray-200">
-                        {[{ v: 0, l: 'All' }, { v: 60, l: '60%+' }, { v: 80, l: '80%+' }].map(({ v, l }) => (
-                          <button
-                            key={v}
-                            onClick={() => setMinScore(v)}
-                            className={`flex-1 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r border-gray-200 last:border-r-0 ${
-                              minScore === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
-                          >
-                            {l}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Posted */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Posted</p>
-                      <div className="flex rounded-md overflow-hidden border border-gray-200">
-                        {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }) => (
-                          <button
-                            key={v}
-                            onClick={() => setDateFilter(v)}
-                            className={`flex-1 py-1.5 text-xs font-medium transition-colors cursor-pointer border-r border-gray-200 last:border-r-0 ${
-                              dateFilter === v ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
-                          >
-                            {l}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Sort */}
-                    <div>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Sort</p>
-                      <div>
-                        {SORT_OPTIONS.map(({ value, label }) => (
-                          <button
-                            key={value}
-                            onClick={() => { setSortBy(value); setShowFilters(false); }}
-                            className={`w-full text-left px-2 py-1 text-xs rounded transition-colors cursor-pointer ${
-                              sortBy === value ? 'bg-gray-50 text-gray-900 font-semibold' : 'text-gray-500 hover:text-gray-900'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-              </div>
-
-              {/* Avatar */}
-              <UserMenu
-                user={user}
-                parsedResume={parsedResume}
-                onNewSearch={handleReset}
-                onLogin={handleLogin}
-                onSignOut={() => {
-                  setUser(null);
-                  setRevealed(false);
-                  setResults(null);
-                }}
-              />
-            </div>
-          )}
-
-        </div>
+          </div>
+        )}
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 relative">
@@ -510,6 +551,31 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          </div>
+        )}
+
+        {/* Section heading — solo H2 above the grid */}
+        {revealed && (
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 }}>
+              <span aria-hidden="true" style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34, background: 'var(--shu)', color: 'var(--paper)',
+                borderRadius: 2, fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
+                fontSize: 18, letterSpacing: '-0.02em', flexShrink: 0,
+              }}>T</span>
+              <h1 className="tm-mincho" style={{ margin: 0, fontSize: 30, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
+                Today's hunting ground
+              </h1>
+            </div>
+            <p className="tm-mono" style={{ margin: '6px 0 0 48px', fontSize: 10, letterSpacing: '0.2em', color: 'var(--sumi-mute)', textTransform: 'uppercase' }}>
+              {(() => {
+                const ready    = filteredJobs.filter(j => tailoredJobIds.has(j.url)).length;
+                const inPrep   = filteredJobs.filter(j => !tailoredJobIds.has(j.url) && j.match_score >= 60).length;
+                const scouting = filteredJobs.filter(j => !tailoredJobIds.has(j.url) && j.match_score < 60).length;
+                return `${ready} Strike Ready  ·  ${inPrep} In Prep  ·  ${scouting} Scouting`;
+              })()}
+            </p>
           </div>
         )}
 
@@ -540,9 +606,9 @@ export default function App() {
             /* Shimmer skeleton while background jobs load */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 h-52 animate-pulse">
+                <div key={i} className="p-5 h-52 animate-pulse" style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}>
                   <div className="flex items-start gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-gray-200 shrink-0" />
+                    <div className="w-10 h-10 bg-gray-200 shrink-0" />
                     <div className="flex-1 pt-1">
                       <div className="h-3.5 bg-gray-200 rounded w-3/4 mb-2" />
                       <div className="h-3 bg-gray-100 rounded w-1/2" />
@@ -559,6 +625,20 @@ export default function App() {
           )}
         </div>
 
+        {/* Footer ornament — END OF HUNT */}
+        {revealed && filteredJobs.length > 0 && (
+          <div style={{ marginTop: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--sumi-mute)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
+              <TalonMark size={20} />
+              <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
+            </div>
+            <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase' }}>
+              End of hunt · {filteredJobs.length} of {displayJobs.length}
+            </div>
+          </div>
+        )}
+
         {/* Upload overlay — covers feed until resume is submitted */}
         {!revealed && (
           <div
@@ -568,7 +648,8 @@ export default function App() {
             <div className="absolute inset-0 bg-white/30" style={{ backdropFilter: 'blur(3px)' }} />
 
             <div
-              className="relative bg-white rounded-2xl border border-gray-200 p-8 w-full max-w-md"
+              className="relative p-8 w-full max-w-md"
+              style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Close button */}
@@ -581,33 +662,30 @@ export default function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
-              <div className={`text-center ${user ? 'mb-8' : 'mb-7'}`}>
-                <div className="flex justify-center mb-4">
+              <div style={{ textAlign: 'center', marginBottom: user ? 32 : 28 }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
                   <TalonMatchLogo size="lg" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900 leading-tight tracking-tight">
+                <h2 className="tm-mincho" style={{ fontSize: 22, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.01em', lineHeight: 1.25, margin: 0 }}>
                   {user ? (
                     <>
                       Upload a new resume
-                      {geoCity && <>, <span className="text-green-600">{geoCity}</span></>}
+                      {geoCity && <>, <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
                     </>
                   ) : (
                     <>
                       Unlock your career matches
-                      {geoCity && <> in <span className="text-green-600">{geoCity}</span></>}
+                      {geoCity && <> in <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
                     </>
                   )}
                 </h2>
-                <p className="text-gray-400 mt-3 text-sm leading-relaxed">
+                <p className="tm-mono" style={{ color: 'var(--sumi-faint)', marginTop: 10, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1.6 }}>
                   {user ? (
-                    'Your results will be saved and linked to your account.'
+                    'Results saved to your account'
                   ) : (
                     <>
-                      Upload your resume to reveal{' '}
-                      <span className="font-medium text-gray-600">
-                        {backgroundJobs.length > 0 ? `${backgroundJobs.length} roles` : 'roles'}
-                      </span>{' '}
-                      tailored to your experience.
+                      Upload resume · reveal{' '}
+                      {backgroundJobs.length > 0 ? `${backgroundJobs.length} roles` : 'roles'}
                     </>
                   )}
                 </p>
@@ -618,9 +696,9 @@ export default function App() {
               {!user && (
                 <>
                   <div className="mt-4 flex items-center gap-3">
-                    <div className="flex-1 h-px bg-gray-100" />
-                    <span className="text-xs text-gray-400 shrink-0">or</span>
-                    <div className="flex-1 h-px bg-gray-100" />
+                    <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
+                    <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--sumi-faint)', flexShrink: 0, textTransform: 'uppercase' }}>or</span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
                   </div>
                   <div className="mt-4">
                     <GoogleSignIn parsedResume={parsedResume} onLogin={handleLogin} />

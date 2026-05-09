@@ -15,39 +15,53 @@ function GoogleIcon() {
   );
 }
 
-function AvatarCircle({ src, initials }) {
+function AvatarCircle({ src, initials, online = false }) {
   const [failed, setFailed] = useState(false);
 
+  const dot = online && (
+    <span style={{
+      position: 'absolute', bottom: -2, right: -2,
+      width: 10, height: 10,
+      background: 'var(--moss)', borderRadius: '50%',
+      border: '2px solid var(--paper)',
+    }} />
+  );
+
   if (!src || failed) {
-    if (initials && initials !== '?') {
-      return (
-        <div
-          data-testid="user-avatar"
-          className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center text-white text-xs font-bold select-none shrink-0"
-        >
-          {initials}
-        </div>
-      );
-    }
     return (
       <div
         data-testid="user-avatar"
-        className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0"
+        style={{
+          width: 38, height: 38, borderRadius: '50%',
+          background: 'var(--sumi)', color: 'var(--paper)',
+          display: 'grid', placeItems: 'center',
+          fontFamily: 'Inter', fontSize: 14, fontWeight: 600,
+          border: '2px solid var(--paper)',
+          boxShadow: '0 0 0 1px var(--rule)',
+          position: 'relative', flexShrink: 0, userSelect: 'none',
+        }}
       >
-        <CircleUser size={20} className="text-gray-400" />
+        {initials && initials !== '?' ? initials : <CircleUser size={18} />}
+        {dot}
       </div>
     );
   }
 
   return (
-    <img
-      src={src}
-      alt={initials}
-      data-testid="user-avatar"
-      onError={() => setFailed(true)}
-      className="w-9 h-9 rounded-lg object-cover shrink-0"
-      referrerPolicy="no-referrer"
-    />
+    <div data-testid="user-avatar" style={{ position: 'relative', flexShrink: 0 }}>
+      <img
+        src={src}
+        alt={initials}
+        onError={() => setFailed(true)}
+        style={{
+          width: 38, height: 38, borderRadius: '50%', objectFit: 'cover',
+          border: '2px solid var(--paper)', boxShadow: '0 0 0 1px var(--rule)',
+          display: 'block',
+        }}
+        referrerPolicy="no-referrer"
+      />
+      {dot}
+    </div>
   );
 }
 
@@ -210,14 +224,14 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
         aria-label="User menu"
         aria-expanded={open}
       >
-        <AvatarCircle src={userAvatar} initials={initials} />
+        <AvatarCircle src={userAvatar} initials={initials} online={!!user} />
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-2.5 w-56 bg-white rounded-xl border border-gray-100 overflow-hidden z-50">
           {/* Identity header */}
           <div className="flex items-center gap-3 px-3 py-3 border-b border-gray-100">
-            <AvatarCircle src={userAvatar} initials={initials} />
+            <AvatarCircle src={userAvatar} initials={initials} online={!!user} />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{userName}</p>
               <p className="text-xs text-gray-400 truncate mt-0.5 leading-tight">{userEmail}</p>

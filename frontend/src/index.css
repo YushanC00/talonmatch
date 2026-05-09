@@ -1,84 +1,53 @@
 @import "tailwindcss";
 
+:root {
+  --washi:      #E8E4D8;
+  --washi-deep: #DBD5C4;
+  --washi-soft: #F1EEE5;
+  --paper:      #F7F4EC;
+  --sumi:       #27302A;
+  --sumi-soft:  #3F4A42;
+  --sumi-mute:  #6E776F;
+  --sumi-faint: #9DA29B;
+  --rule:       #BFC3B6;
+  --shu:        #A85E3E;
+  --shu-deep:   #7A3F26;
+  --shu-soft:   #D9B49C;
+  --moss:       #5A7A4E;
+  --moss-deep:  #384D30;
+  --moss-soft:  #B4C4A6;
+  --gold:       #A88A4E;
+  --gold-soft:  #D6BF8B;
+  --indigo:     #3D4D5C;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  background-color: var(--washi);
+  color: var(--sumi);
+  background-image:
+    radial-gradient(rgba(39,48,42,0.035) 1px, transparent 1px),
+    radial-gradient(rgba(39,48,42,0.025) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 1px 2px;
 }
 
-/* ── Job card animated border ─────────────────────────────────────────────── */
+.tm-mincho { font-family: "Shippori Mincho","Noto Serif JP",serif; }
+.tm-jp     { font-family: "Noto Serif JP","Shippori Mincho",serif; }
+.tm-mono   { font-family: "JetBrains Mono",ui-monospace,monospace; }
 
-@property --border-sweep {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-@keyframes border-draw {
-  to { --border-sweep: 360deg; }
-}
-
-@keyframes card-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-  50%       { box-shadow: 0 0 16px 4px rgba(16, 185, 129, 0.10); }
-}
+/* ── Job card hover ───────────────────────────────────────────────────────── */
 
 .job-card {
   position: relative;
-  transition: box-shadow 0.35s ease;
-}
-
-/* clockwise green border drawn via conic-gradient + mask */
-.job-card::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 13px; /* card's rounded-xl (12px) + 1px inset */
-  background: conic-gradient(
-    from -90deg at 50% 50%,
-    #10B981 var(--border-sweep),
-    transparent var(--border-sweep)
-  );
-  padding: 1px;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: destination-out;
-  mask-composite: exclude;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.job-card:hover::before {
-  opacity: 1;
-  animation: border-draw 0.6s ease-out forwards;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .job-card:hover {
-  animation: card-glow-pulse 2s ease-in-out 0.5s infinite;
-}
-
-@keyframes card-glow-pulse-indigo {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
-  50%       { box-shadow: 0 0 18px 5px rgba(99, 102, 241, 0.10); }
-}
-
-/* Tailored cards: indigo sweep + always-on breathing glow */
-.job-card--tailored::before {
-  background: conic-gradient(
-    from -90deg at 50% 50%,
-    #6366F1 var(--border-sweep),
-    transparent var(--border-sweep)
-  );
-}
-
-.job-card--tailored {
-  animation: card-glow-pulse-indigo 3s ease-in-out 0s infinite;
-}
-
-.job-card--tailored:hover {
-  animation: card-glow-pulse-indigo 2s ease-in-out 0.5s infinite;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(39,48,42,0.10);
 }
 
 /* ── Card action fade-in (tailored button swap) ──────────────────────────── */

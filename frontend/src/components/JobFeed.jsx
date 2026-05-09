@@ -33,6 +33,7 @@ export default function JobFeed({ jobs = [], totalJobs = 0, parsedResume, isLogg
         {jobs.map((job, i) => (
           <JobCard
             key={job.url || `${job.job_title}-${i}`}
+            index={i}
             job={job}
             parsedResume={parsedResume}
             onViewDetails={setSelectedJob}
