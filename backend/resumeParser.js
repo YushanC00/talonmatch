@@ -92,6 +92,12 @@ function extractLocation(lines) {
   return '';
 }
 
+function splitLocation(locationStr) {
+  if (!locationStr) return { city: '', province: '' };
+  const parts = locationStr.split(',').map(s => s.trim());
+  return { city: parts[0] || '', province: parts[1] || '' };
+}
+
 // Parse job title from a line that may include date range and company
 function parseJobTitle(line) {
   // Remove date ranges first
@@ -216,12 +222,15 @@ function parseResume(rawText) {
   const skills = vocabSkills;
 
   const location = extractLocation(lines);
+  const { city, province } = splitLocation(location);
 
   return {
     skills,
     most_recent_job_title,
     all_job_titles,
     location,
+    city,
+    province,
     experience,
     education,
   };

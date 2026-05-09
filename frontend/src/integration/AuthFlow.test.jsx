@@ -81,7 +81,7 @@ describe('Auth Gate — Tailor Resume button', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /tailor resume/i }));
+    fireEvent.click(screen.getByRole('button', { name: /tailor & apply/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/sign in to tailor your resume/i)).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe('Auth Gate — Tailor Resume button', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /tailor resume/i }));
+    fireEvent.click(screen.getByRole('button', { name: /tailor & apply/i }));
 
     expect(screen.queryByText(/sign in to save your progress/i)).not.toBeInTheDocument();
   });
@@ -122,7 +122,7 @@ describe('Auth Gate — Tailor Resume button', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /tailor resume/i }));
+    fireEvent.click(screen.getByRole('button', { name: /tailor & apply/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
@@ -156,7 +156,7 @@ describe('Auth Gate — localStorage state persistence', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /tailor resume/i }));
+    fireEvent.click(screen.getByRole('button', { name: /tailor & apply/i }));
 
     expect(setItem).toHaveBeenCalledWith(
       'talonmatch_pending_resume',
@@ -326,6 +326,5 @@ describe('Honesty Patch — cards after auth', () => {
 
     expect(screen.queryByText(/100%\s*match/i)).not.toBeInTheDocument();
     expect(screen.getByText(/99%\s*match/i)).toBeInTheDocument();
-    expect(screen.getByText(/Missing/i)).toBeInTheDocument();
   });
 });

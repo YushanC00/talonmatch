@@ -23,7 +23,7 @@ function AvatarCircle({ src, initials }) {
       return (
         <div
           data-testid="user-avatar"
-          className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-bold select-none shrink-0"
+          className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center text-white text-xs font-bold select-none shrink-0"
         >
           {initials}
         </div>
@@ -32,7 +32,7 @@ function AvatarCircle({ src, initials }) {
     return (
       <div
         data-testid="user-avatar"
-        className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center shrink-0"
+        className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0"
       >
         <CircleUser size={20} className="text-gray-400" />
       </div>
@@ -45,7 +45,7 @@ function AvatarCircle({ src, initials }) {
       alt={initials}
       data-testid="user-avatar"
       onError={() => setFailed(true)}
-      className="w-9 h-9 rounded-full object-cover shrink-0"
+      className="w-9 h-9 rounded-lg object-cover shrink-0"
       referrerPolicy="no-referrer"
     />
   );
@@ -145,12 +145,12 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
         <button
           onClick={() => setOpen(o => !o)}
           disabled={signingIn}
-          className="rounded-full border-2 border-dashed border-gray-300 hover:border-green-400 focus:outline-none focus:border-green-400 transition-all cursor-pointer disabled:opacity-50"
+          className="rounded-md border-2 border-dashed border-gray-300 hover:border-green-400 focus:outline-none focus:border-green-400 transition-all cursor-pointer disabled:opacity-50"
           aria-label="Guest menu"
           aria-expanded={open}
           data-testid="guest-avatar-trigger"
         >
-          <div className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center">
             {signingIn
               ? <span className="w-4 h-4 border-2 border-gray-300 border-t-green-600 rounded-full animate-spin" />
               : <CircleUser size={18} className="text-gray-400" />
@@ -206,7 +206,7 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="rounded-full ring-2 ring-gray-200 ring-offset-2 hover:ring-green-300 focus:outline-none focus:ring-green-300 transition-all cursor-pointer"
+        className="rounded-md ring-2 ring-gray-200 ring-offset-2 hover:ring-green-300 focus:outline-none focus:ring-green-300 transition-all cursor-pointer"
         aria-label="User menu"
         aria-expanded={open}
       >

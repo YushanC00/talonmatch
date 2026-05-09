@@ -92,10 +92,16 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       return res.status(400).json({ error: 'Could not extract job titles from resume. Pass ?title= as fallback.' });
     }
 
+    const userLocation = resume.city && resume.province
+      ? `${resume.city}, ${resume.province}`
+      : resume.location || '';
+
+    console.log('[location] raw location:', resume.location, '| city:', resume.city, '| province:', resume.province, '| userLocation used:', userLocation || '(empty — will search Remote)');
+
     const jobs = await fetchJobs({
       title: titles[0],
       titles,
-      userLocation: resume.location,
+      userLocation,
       resultsPerPage: parseInt(results_per_page) || 10,
     });
 
@@ -120,7 +126,10 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       most_recent_job_title: resume.most_recent_job_title,
       all_job_titles: resume.all_job_titles,
       resume_location: resume.location,
+      resume_city: resume.city || '',
+      resume_province: resume.province || '',
       resume_experience: resume.experience,
+      resume_projects: resume.projects || [],
       search_query_used: searchQueryUsed,
       count: rankedWithDates.length,
       jobs: rankedWithDates,

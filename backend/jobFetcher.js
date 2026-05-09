@@ -117,6 +117,16 @@ function httpGet(url, headers = {}) {
 
 // ─── JSearch (RapidAPI) ──────────────────────────────────────────────────────
 
+function formatPayRange(min, max, currency, period) {
+  if (!min && !max) return '';
+  const symbol = currency === 'CAD' ? 'CA$' : '$';
+  const suffix = period === 'HOUR' ? '/hr' : period === 'MONTH' ? '/mo' : '';
+  const fmt = (n) => n >= 1000 && period !== 'HOUR' ? `${Math.round(n / 1000)}k` : `${Math.round(n)}`;
+  if (min && max) return `${symbol}${fmt(min)} — ${symbol}${fmt(max)}${suffix}`;
+  if (min) return `${symbol}${fmt(min)}+${suffix}`;
+  return `up to ${symbol}${fmt(max)}${suffix}`;
+}
+
 function transformJSearchJob(job) {
   const city    = job.job_city    || '';
   const state   = job.job_state   || '';
@@ -133,6 +143,7 @@ function transformJSearchJob(job) {
     is_remote:          Boolean(job.job_is_remote),
     url:                job.job_apply_link   || job.job_google_link || '',
     postedAt:           job.job_posted_at_datetime_utc || null,
+    pay_range:          formatPayRange(job.job_min_salary, job.job_max_salary, job.job_salary_currency, job.job_salary_period),
   };
 }
 
@@ -144,17 +155,21 @@ function sanitizeTitle(t) {
     .trim();
 }
 
-function buildSingleQuery(title) {
+function buildSingleQuery(title, userLocation = '') {
   const clean = sanitizeTitle(title);
-  return clean ? `${clean} Canada` : '';
+  if (!clean) return '';
+  const locationSuffix = userLocation.trim() || 'Remote';
+  const query = `${clean} ${locationSuffix}`;
+  console.log('[buildSingleQuery] title:', clean, '| userLocation:', userLocation || '(empty)', '| query:', query);
+  return query;
 }
 
 // Fetch for ONE title — cache keyed per individual query
-async function fetchOneTitle({ title, country = 'CA', resultsPerPage = 10 }) {
+async function fetchOneTitle({ title, country = 'CA', resultsPerPage = 10, userLocation = '' }) {
   const owKey    = process.env.OPENWEBNINJA_KEY;
   const rapidKey = process.env.RAPIDAPI_KEY;
 
-  const query = buildSingleQuery(title);
+  const query = buildSingleQuery(title, userLocation);
   if (!query) return [];
 
   // DRY_RUN → log and return nothing (caller merges mock separately)
@@ -212,8 +227,9 @@ function deduplicateJobs(jobs) {
   });
 }
 
-async function fetchFromJSearch({ titles, resultsPerPage = 10 }) {
-  // USE_MOCK_DATA → skip everything
+const NARROW_THRESHOLD = 10; // expand to province if city returns fewer than this
+
+async function fetchFromJSearch({ titles, userLocation = '', resultsPerPage = 10 }) {
   if (process.env.USE_MOCK_DATA === 'true') {
     console.log('[jobs] mock mode active');
     return getMockData();
@@ -223,21 +239,44 @@ async function fetchFromJSearch({ titles, resultsPerPage = 10 }) {
   const rapidKey = process.env.RAPIDAPI_KEY;
   if (!owKey && !rapidKey) throw new Error('Set OPENWEBNINJA_KEY or RAPIDAPI_KEY env var');
 
-  // Top 3 distinct titles, parallel fetches
   const topTitles = [...new Set(titles.map(sanitizeTitle).filter(Boolean))].slice(0, 3);
 
   if (process.env.DRY_RUN === 'true') {
-    topTitles.forEach(t => console.log('[dry-run] query that would be sent:', buildSingleQuery(t)));
+    topTitles.forEach(t => console.log('[dry-run] query:', buildSingleQuery(t, userLocation)));
     return getMockData();
   }
 
-  const results = await Promise.all(
-    topTitles.map(t => fetchOneTitle({ title: t, resultsPerPage }))
-  );
+  // Split "City, Province" → city for narrow, province for wide
+  const [city = '', province = ''] = userLocation.split(',').map(s => s.trim());
+  const narrowLocation = city || userLocation;
 
-  const merged = deduplicateJobs(results.flat());
-  console.log(`[jobs] merged ${merged.length} unique jobs from ${topTitles.length} queries`);
-  return merged;
+  // Phase 1 — narrow: city-level (~25 km)
+  const narrowRaw = await Promise.all(
+    topTitles.map(t => fetchOneTitle({ title: t, userLocation: narrowLocation, resultsPerPage }))
+  );
+  const narrowJobs = deduplicateJobs(narrowRaw.flat());
+  console.log(`[radius] narrow (${narrowLocation || 'Remote'}): ${narrowJobs.length} results`);
+
+  // Phase 2 — wide: province-level if city returned too few
+  let wideJobs = [];
+  if (narrowJobs.length < NARROW_THRESHOLD && province) {
+    const wideRaw = await Promise.all(
+      topTitles.map(t => fetchOneTitle({ title: t, userLocation: province, resultsPerPage }))
+    );
+    wideJobs = deduplicateJobs(wideRaw.flat());
+    console.log(`[radius] wide (${province}): ${wideJobs.length} results`);
+  }
+
+  // Remote injection — always merged, never filtered by location
+  const remoteRaw = await Promise.all(
+    topTitles.map(t => fetchOneTitle({ title: t, userLocation: 'Remote', resultsPerPage: Math.ceil(resultsPerPage / 2) }))
+  );
+  const remoteJobs = deduplicateJobs(remoteRaw.flat());
+  console.log(`[radius] remote injection: ${remoteJobs.length} results`);
+
+  const all = deduplicateJobs([...narrowJobs, ...wideJobs, ...remoteJobs]);
+  console.log(`[jobs] total ${all.length} unique (narrow=${narrowJobs.length} wide=${wideJobs.length} remote=${remoteJobs.length})`);
+  return all;
 }
 
 // ─── Remotive fallback (no key needed) ───────────────────────────────────────
@@ -266,6 +305,7 @@ function transformRemotiveJob(job) {
     is_remote:          true,
     url:                job.url            || '',
     postedAt:           job.publication_date || null,
+    pay_range:          '',
     _candidateLocation: candidateLocation,
   };
 }
@@ -293,7 +333,7 @@ async function fetchFromRemotive({ title, userLocation, resultsPerPage = 40 }) {
 async function fetchJobs({ title, titles, userLocation, resultsPerPage = 10 }) {
   let jobs;
   if (process.env.OPENWEBNINJA_KEY || process.env.RAPIDAPI_KEY) {
-    jobs = await fetchFromJSearch({ titles: titles?.length ? titles : [title], resultsPerPage });
+    jobs = await fetchFromJSearch({ titles: titles?.length ? titles : [title], userLocation, resultsPerPage });
   } else {
     jobs = await fetchFromRemotive({ title, userLocation, resultsPerPage: resultsPerPage * 2 });
   }

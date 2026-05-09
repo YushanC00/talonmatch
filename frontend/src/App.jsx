@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Wind, SlidersHorizontal } from 'lucide-react';
+import { Wind, SlidersHorizontal, Briefcase, Zap } from 'lucide-react';
 import ResumeUpload from './components/ResumeUpload';
 import JobFeed from './components/JobFeed';
 import GoogleSignIn from './components/GoogleSignIn';
@@ -15,8 +15,8 @@ function TalonMatchLogo({ size = 'md' }) {
     <div className="flex items-center gap-2">
       <Wind size={iconSize} className="text-green-600 shrink-0" strokeWidth={2} />
       <span className={`${textClass} tracking-tight`}>
-        <span className="font-bold text-gray-900">Talon</span>
-        <span className="font-light text-gray-700">Match</span>
+        <span className="font-extrabold text-gray-900">Talon</span>
+        <span className="font-normal text-gray-700">Match</span>
       </span>
     </div>
   );
@@ -128,14 +128,24 @@ export default function App() {
       const city = await resolveCity('');
       if (!cancelled && city) setGeoCity(city);
 
-      const searchCity = city || 'Toronto, ON';
-      const jobs = await fetchBackgroundJobs(searchCity);
+      const jobs = await fetchBackgroundJobs(city);
       if (!cancelled) setBackgroundJobs(jobs);
     }
 
     initBackground();
     return () => { cancelled = true; };
   }, []);
+
+  // Re-fetch background jobs with resume location once a resume is processed
+  useEffect(() => {
+    const city = results?.resume_city;
+    const province = results?.resume_province;
+    if (!city) return;
+    const loc = province ? `${city}, ${province}` : city;
+    fetchBackgroundJobs(loc).then(jobs => {
+      if (jobs.length > 0) setBackgroundJobs(jobs);
+    }).catch(() => {});
+  }, [results?.resume_city]);
 
   // Supabase auth — single source of truth via onAuthStateChange
   // INITIAL_SESSION: fires on page load with existing session (handles refresh/revisit)
@@ -192,7 +202,7 @@ export default function App() {
               updated_at: new Date().toISOString(),
             },
             { onConflict: 'user_id' }
-          ).then(() => {});
+          ).then(() => {}).catch(() => {});
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -212,7 +222,7 @@ export default function App() {
     const timeoutId = setTimeout(() => controller.abort(), 15_000);
 
     try {
-      const location = geoCity || 'Toronto, ON';
+      const location = geoCity || '';
       const data = await matchResume({ file, location, signal: controller.signal });
       clearTimeout(timeoutId);
       // Client-side postedAt guarantee — works even when server is running old code
@@ -229,7 +239,7 @@ export default function App() {
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id' }
-        ).then(() => {});
+        ).then(() => {}).catch(() => {});
       }
 
       // Double rAF: let React paint new jobs before triggering CSS transition
@@ -279,7 +289,14 @@ export default function App() {
 
   const displayJobs  = results ? results.jobs : backgroundJobs;
   const parsedResume = results
-    ? { skills: results.resume_skills, experience: results.resume_experience }
+    ? {
+        skills: results.resume_skills,
+        experience: results.resume_experience,
+        projects: results.resume_projects || [],
+        location: results.resume_location,
+        city: results.resume_city || '',
+        province: results.resume_province || '',
+      }
     : { skills: [], experience: [] };
   const skillsCount    = results?.resume_skills?.length ?? 0;
   const filtersActive  = minScore !== 0 || dateFilter !== 'any';
@@ -307,21 +324,22 @@ export default function App() {
           {/* Left: Logo */}
           <TalonMatchLogo />
 
-          {/* Center: Match summary — absolutely centered so it's unaffected by left/right widths */}
+          {/* Center: Stat pills — absolutely centered so unaffected by left/right widths */}
           {revealed && displayJobs.length > 0 && (
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-baseline gap-1 pointer-events-none select-none">
-              <span className="text-sm font-semibold text-gray-800 tabular-nums">
-                {filteredJobs.length}
-              </span>
-              <span className="text-xs text-gray-400">
-                {filteredJobs.length < displayJobs.length ? `of ${displayJobs.length} jobs` : 'jobs'}
+            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 select-none">
+              <span className="flex items-center gap-1.5 h-7 px-3 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-gray-600">
+                <Briefcase size={11} strokeWidth={2} className="text-gray-400 shrink-0" />
+                <span className="tabular-nums font-semibold text-gray-800">{filteredJobs.length}</span>
+                <span className="text-gray-400">
+                  {filteredJobs.length < displayJobs.length ? `of ${displayJobs.length} jobs` : 'jobs'}
+                </span>
               </span>
               {skillsCount > 0 && (
-                <>
-                  <span className="text-gray-200 text-xs mx-1">·</span>
-                  <span className="text-sm font-semibold text-gray-800 tabular-nums">{skillsCount}</span>
-                  <span className="text-xs text-gray-400">skills</span>
-                </>
+                <span className="flex items-center gap-1.5 h-7 px-3 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-gray-600">
+                  <Zap size={11} strokeWidth={2} className="text-gray-400 shrink-0" />
+                  <span className="tabular-nums font-semibold text-gray-800">{skillsCount}</span>
+                  <span className="text-gray-400">skills</span>
+                </span>
               )}
             </div>
           )}
@@ -348,7 +366,7 @@ export default function App() {
                 </button>
 
                 {showFilters && (
-                  <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-100 rounded-xl shadow-sm z-50 w-52 p-3 space-y-3.5">
+                  <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl z-50 w-52 p-3 space-y-3.5">
 
                     {/* Match */}
                     <div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Diff from 'diff';
+import { skillMatches } from '../utils/skillMatcher';
 
 function cleanBulletText(text) {
   if (!text) return '';
@@ -93,17 +94,24 @@ function ReviewCard({ status, onAccept, onReject, onUndo, children }) {
   );
 }
 
-export default function TailoredResumeModal({ data, job, parsedResume, jobTitle, company, onClose }) {
+export default function TailoredResumeModal({ data, job, parsedResume, jobTitle, company, autoAccept = false, onClose }) {
   const requirements = job?.requirements_array || [];
   const totalRequirements = requirements.length;
-  const userSkillsSet = new Set((parsedResume?.skills || []).map(s => s.toLowerCase()));
+  const resumeSkills = parsedResume?.skills || [];
   const missingSkillsSet = new Set(
-    requirements.filter(r => !userSkillsSet.has(r.toLowerCase())).map(s => s.toLowerCase())
+    requirements.filter(r => !skillMatches(resumeSkills, r)).map(s => s.toLowerCase())
   );
-  const baseMatchedCount = requirements.filter(r => userSkillsSet.has(r.toLowerCase())).length;
+  const baseMatchedCount = requirements.filter(r => skillMatches(resumeSkills, r)).length;
 
   const pdfRef = useRef(null);
-  const [reviews, setReviews] = useState({});
+  const [reviews, setReviews] = useState(() => {
+    if (!autoAccept) return {};
+    const r = { summary: 'accepted' };
+    (data.tailored_experience || []).forEach((exp, i) => {
+      (exp.bullets || []).forEach((_, j) => { r[`exp-${i}-${j}`] = 'accepted'; });
+    });
+    return r;
+  });
   const [flashing, setFlashing] = useState(false);
   const prevScoreRef = useRef(null);
 
@@ -194,8 +202,12 @@ export default function TailoredResumeModal({ data, job, parsedResume, jobTitle,
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Review Tailored Resume</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{jobTitle} · {company}</p>
+            <h2 className="text-base font-bold text-gray-900">
+              {autoAccept ? 'Resume Ready to Download' : 'Review Tailored Resume'}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {autoAccept ? 'All changes auto-applied · ' : ''}{jobTitle} · {company}
+            </p>
           </div>
           <div className="flex items-center gap-2.5">
 

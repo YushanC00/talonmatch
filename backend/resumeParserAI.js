@@ -14,12 +14,20 @@ Return ONLY this JSON — no markdown, no extra keys:
 {
   "skills": ["skill1", "skill2"],
   "location": "City, Province/State or empty string",
+  "city": "City name only or empty string",
+  "province": "Province or State abbreviation only or empty string",
   "experience": [
     {
       "title": "Job title",
       "company": "Company name",
       "period": "Date range e.g. Jan 2020 – Present",
       "description": "All bullet points and responsibilities as one string"
+    }
+  ],
+  "projects": [
+    {
+      "name": "Project name",
+      "description": "All project details, tech stack, and achievements as one string"
     }
   ],
   "education": [
@@ -56,11 +64,17 @@ async function parseResumeAI(rawText) {
   return {
     skills: parsed.skills || [],
     location: parsed.location || '',
+    city: parsed.city || '',
+    province: parsed.province || '',
     experience: (parsed.experience || []).map(e => ({
       title: e.title || '',
       company: e.company || '',
       period: e.period || '',
       description: e.description || '',
+    })),
+    projects: (parsed.projects || []).map(p => ({
+      name: p.name || '',
+      description: p.description || '',
     })),
     education: parsed.education || [],
     most_recent_job_title: parsed.experience?.[0]?.title || '',

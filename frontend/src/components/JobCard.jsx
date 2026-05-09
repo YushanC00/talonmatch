@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import TailoredResumeModal from './TailoredResumeModal';
+import { MapPin, ChevronRight, ExternalLink, Globe } from 'lucide-react';
+import TailoredResumeDrawer from './TailoredResumeDrawer';
 import AuthModal from './AuthModal';
+import { partitionSkills } from '../utils/tokenMatcher';
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -27,16 +29,15 @@ function CompanyAvatar({ company }) {
   ];
   const color = colors[initial.charCodeAt(0) % colors.length];
   return (
-    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${color}`}>
+    <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${color}`}>
       {initial}
     </div>
   );
 }
 
 function MatchBadge({ score }) {
-  const textColor = score > 80 ? 'text-green-600' : 'text-gray-500';
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 bg-gray-100 ${textColor}`}>
+    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 bg-slate-100 text-slate-500">
       {score}% match
     </span>
   );
@@ -44,18 +45,32 @@ function MatchBadge({ score }) {
 
 export default function JobCard({ job, parsedResume, onViewDetails, isLoggedIn = false, onLogin,
   onSaveBeforeRedirect, pendingTailorJobUrl, onPendingTailorHandled }) {
-  const { job_title, company, location, is_remote, match_score, match_reason, requirements_array, url, description, postedAt } = job;
+  const { job_title, company, location, is_remote, match_score, requirements_array, url, description, postedAt, pay_range } = job;
 
   const [tailoring, setTailoring] = useState(false);
   const [tailored, setTailored] = useState(null);
   const [tailorError, setTailorError] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showMatched, setShowMatched] = useState(false);
 
-  const showRemote = is_remote || /remote/i.test(location || '');
+  const showRemote = is_remote
+    || /remote/i.test(location || '')
+    || /remote/i.test(job_title || '')
+    || /remote/i.test(description || '');
 
-  const userSkillsSet = new Set((parsedResume?.skills || []).map(s => s.toLowerCase()));
-  const missingSkills = (requirements_array || []).filter(r => !userSkillsSet.has(r.toLowerCase()));
+  const cityName = location ? location.split(',')[0].trim() : '';
+  const relativeDate = formatRelativeTime(postedAt);
+
+  const resumeSkills = parsedResume?.skills || [];
+  const { matched: matchedSkills, missing: missingSkills } = partitionSkills(resumeSkills, requirements_array);
   const effectiveScore = missingSkills.length > 0 ? Math.min(match_score, 99) : match_score;
+  const matchTier = (effectiveScore >= 85 && missingSkills.length === 0) ? 'high'
+    : effectiveScore >= 60 ? 'mid'
+    : 'low';
+
+  useEffect(() => {
+    console.log('[Matching Debug]: Resume Skills:', resumeSkills, '| Job Skills:', requirements_array ?? []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTailor = async () => {
     if (!isLoggedIn) {
@@ -109,79 +124,98 @@ export default function JobCard({ job, parsedResume, onViewDetails, isLoggedIn =
 
   return (
     <>
-      <article className="job-card bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-4">
+      <article className="job-card bg-white rounded-xl border border-gray-100 p-5 flex flex-col gap-3 relative overflow-visible">
 
-        {/* Header row: avatar + title + badge */}
+        {/* Remote floating badge */}
+        {showRemote && (
+          <div data-testid="remote-ribbon" className="absolute -top-2 -left-2 z-10 flex items-center gap-1 bg-slate-900 text-white px-2 py-1 rounded-md text-[10px] font-bold uppercase border border-slate-700 pointer-events-none" aria-hidden="true">
+            <Globe size={9} strokeWidth={2.5} />
+            Remote
+          </div>
+        )}
+
+        {/* Header: avatar · title · badge */}
         <div className="flex items-start gap-3">
           <CompanyAvatar company={company} />
           <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-bold text-gray-900 leading-snug line-clamp-2">{job_title}</h2>
-            <p className="text-xs text-gray-500 mt-0.5 truncate">{company}</p>
+            <h2 className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{job_title}</h2>
+
+            {/* Salary directly under title */}
+            {pay_range && (
+              <p className="text-xs font-bold text-emerald-700 mt-0.5">{pay_range}</p>
+            )}
+
+            {/* Company · city · date sub-line */}
+            <div className="flex items-center gap-1.5 text-xs mt-0.5 flex-wrap text-gray-400">
+              <span className="flex items-center gap-1 min-w-0">
+                <span className="truncate">{company}</span>
+                {url && (
+                  <a href={url} target="_blank" rel="noopener noreferrer"
+                    aria-label="View posting"
+                    className="shrink-0 text-gray-300 hover:text-indigo-500 transition-colors">
+                    <ExternalLink size={10} strokeWidth={2} />
+                  </a>
+                )}
+              </span>
+              {cityName && <span className="text-gray-300">·</span>}
+              {cityName && (
+                <span className="flex items-center gap-0.5 shrink-0">
+                  <MapPin size={10} strokeWidth={2} className="shrink-0" />
+                  <span>{cityName}</span>
+                </span>
+              )}
+              {relativeDate && <span className="text-gray-300">·</span>}
+              {relativeDate && <span className="shrink-0">{relativeDate}</span>}
+            </div>
           </div>
           <MatchBadge score={effectiveScore} />
         </div>
 
-        {/* Location / remote / date */}
-        <div className="flex items-center gap-2 flex-wrap -mt-1">
-          {(location || postedAt) && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <svg className="w-3 h-3 shrink-0" viewBox="0 0 16 16" fill="currentColor">
-                <path fillRule="evenodd" d="M8 1.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9zM2 6a6 6 0 1110.89 3.477l3.817 3.816a.75.75 0 01-1.06 1.061l-3.816-3.817A6 6 0 012 6z" clipRule="evenodd" />
-              </svg>
-              {location && <span>{location}</span>}
-              {location && postedAt && <span className="mx-0.5">·</span>}
-              {postedAt && <span>{formatRelativeTime(postedAt) ?? 'Recently posted'}</span>}
-            </span>
-          )}
-          {showRemote && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-600 ring-1 ring-violet-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-              Remote
-            </span>
-          )}
-        </div>
-
-        {/* Clickable missing-skills area */}
-        <button
-          onClick={() => onViewDetails(job)}
-          className="text-left rounded-lg px-3 py-3 -mx-3 hover:bg-white/80 active:bg-gray-50 transition-colors cursor-pointer"
-        >
-          {missingSkills.length > 0 ? (
-            <p className="text-xs leading-relaxed">
-              <span className="font-semibold text-amber-600">
-                Missing {missingSkills.length} key skill{missingSkills.length > 1 ? 's' : ''}: </span>
-              <span className="text-amber-600">
-                {missingSkills.slice(0, 3).join(', ')}
-                {missingSkills.length > 3 ? ` +${missingSkills.length - 3} more` : ''}.
-              </span>
-              <span className="text-gray-400 ml-1">Click to bridge the gap.</span>
-            </p>
-          ) : effectiveScore === 100 ? (
-            <p className="text-xs leading-relaxed">
-              <span className="font-semibold text-green-600">You match all listed requirements.</span>
-              <span className="text-gray-400 ml-1">Click for full job details.</span>
-            </p>
-          ) : (
-            <p className="text-xs leading-relaxed">
-              <span className="font-semibold text-gray-500">{effectiveScore}% keyword match.</span>
-              <span className="text-gray-400 ml-1">Requirements may not be fully listed — click to scan the JD.</span>
-            </p>
-          )}
-        </button>
+        {/* Matched skills toggle */}
+        {matchedSkills.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowMatched(v => !v)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors cursor-pointer"
+            >
+              <ChevronRight
+                size={11}
+                strokeWidth={2.5}
+                className={`transition-transform ${showMatched ? 'rotate-90' : ''}`}
+              />
+              {matchedSkills.length} skill{matchedSkills.length > 1 ? 's' : ''} matched
+            </button>
+            {showMatched && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {matchedSkills.map(s => (
+                  <span key={s} className="text-xs px-1.5 py-0.5 rounded border border-green-100 bg-green-50 text-green-700">
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {tailorError && (
-          <p className="text-xs text-red-500 break-all -mt-2">{tailorError}</p>
+          <p className="text-xs text-red-500 break-all">{tailorError}</p>
         )}
 
         {/* Divider */}
         <div className="border-t border-gray-100 -mx-5" />
 
         {/* Actions */}
-        <div className="flex items-center gap-2 -mb-0.5 flex-wrap">
+        <div className="flex items-center gap-2 -mb-0.5">
           <button
             onClick={handleTailor}
             disabled={tailoring}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-700 active:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer ${
+              matchTier === 'high'
+                ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800'
+                : matchTier === 'mid'
+                ? 'border border-slate-200 text-slate-700 hover:bg-slate-50 active:bg-slate-100'
+                : 'border border-gray-300 text-gray-500 hover:bg-gray-50 active:bg-gray-100'
+            }`}
           >
             {tailoring ? (
               <>
@@ -191,39 +225,41 @@ export default function JobCard({ job, parsedResume, onViewDetails, isLoggedIn =
                 </svg>
                 Tailoring...
               </>
+            ) : matchTier === 'high' ? (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                One-Click Apply
+              </>
+            ) : matchTier === 'mid' ? (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Tailor & Apply
+              </>
             ) : (
               <>
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                Tailor Resume
+                Review Gaps
               </>
             )}
           </button>
 
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto text-xs font-medium text-gray-400 hover:text-gray-700 transition-colors flex items-center gap-0.5"
-            >
-              Apply
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-          )}
         </div>
       </article>
 
       {tailored && (
-        <TailoredResumeModal
+        <TailoredResumeDrawer
           data={tailored}
           job={job}
           parsedResume={parsedResume}
           jobTitle={job_title}
           company={company}
+          autoAccept={matchTier === 'high'}
           onClose={() => setTailored(null)}
         />
       )}
