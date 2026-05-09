@@ -1,6 +1,7 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import * as Diff from 'diff';
-import { Pencil, Check, Save, ChevronDown } from 'lucide-react';
+import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
 import { saveApplication } from '../lib/saveApplication';
 
@@ -10,9 +11,9 @@ class DrawerErrorBoundary extends Component {
   render() {
     if (this.state.caught) {
       return (
-        <div className="fixed inset-y-0 right-0 w-full max-w-2xl bg-white border-l border-gray-200 flex flex-col items-center justify-center gap-4 z-50">
-          <p className="text-sm font-semibold text-gray-700">Something went wrong rendering the drawer.</p>
-          <button onClick={this.props.onClose} className="px-4 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer">Close</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--paper)', border: '1px solid var(--rule)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 50 }}>
+          <p style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--sumi)' }}>Something went wrong rendering the panel.</p>
+          <button onClick={this.props.onClose} style={{ padding: '8px 16px', border: '1px solid var(--rule)', background: 'var(--paper)', color: 'var(--sumi)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, borderRadius: 2 }}>Close</button>
         </div>
       );
     }
@@ -28,61 +29,70 @@ function cleanBulletText(text) {
     .trim();
 }
 
+function computeDiffCounts(original, tailored) {
+  const parts = Diff.diffWords(original || '', tailored || '');
+  const added   = parts.filter(p => p.added).reduce((s, p) => s + p.value.split(/\s+/).filter(Boolean).length, 0);
+  const removed = parts.filter(p => p.removed).reduce((s, p) => s + p.value.split(/\s+/).filter(Boolean).length, 0);
+  return { added, removed };
+}
+
 const DiffText = memo(function DiffText({ original, tailored }) {
   const parts = Diff.diffWords(original || '', tailored || '');
   return (
     <span>
       {parts.map((part, i) => {
-        if (part.added) return <mark key={i} className="text-green-800 bg-green-100 rounded px-0.5 font-medium not-italic">{part.value}</mark>;
-        if (part.removed) return <del key={i} className="text-red-400 bg-red-50 line-through rounded px-0.5 not-italic">{part.value}</del>;
+        if (part.added) return (
+          <mark key={i} style={{ background: '#DDEFCE', color: 'var(--moss-deep)', padding: '2px 5px', borderRadius: 2, boxShadow: 'inset 0 -2px 0 rgba(71,93,42,0.18)', fontStyle: 'normal', fontWeight: 500 }}>{part.value}</mark>
+        );
+        if (part.removed) return (
+          <span key={i} style={{ background: '#F8E2DC', color: 'var(--shu-deep)', padding: '2px 5px', borderRadius: 2, textDecoration: 'line-through', textDecorationColor: 'var(--shu)', textDecorationThickness: '1.5px' }}>{part.value}</span>
+        );
         return <span key={i}>{part.value}</span>;
       })}
     </span>
   );
 });
 
-const ReviewCard = memo(function ReviewCard({ status, onAccept, onCancel, children }) {
-  const borderClass =
-    status === 'accepted'  ? 'border-green-200 bg-green-50/50'
-    : status === 'cancelled' ? 'border-amber-200 bg-amber-50/30'
-    : 'border-gray-200 bg-white hover:border-gray-300';
+const SECTION_HEAD = {
+  fontFamily: '"JetBrains Mono", monospace',
+  fontSize: 11, letterSpacing: '0.24em',
+  color: 'var(--sumi-mute)', textTransform: 'uppercase',
+  fontWeight: 600, margin: '0 0 12px',
+};
+
+const ReviewCard = memo(function ReviewCard({ status, onAccept, onCancel, addedCount = 0, removedCount = 0, children }) {
+  const borderColor = status === 'accepted' ? 'var(--moss-soft)' : status === 'cancelled' ? 'var(--shu-soft)' : 'var(--rule)';
+  const bgColor     = status === 'accepted' ? 'rgba(90,122,78,0.06)' : status === 'cancelled' ? 'rgba(168,94,62,0.04)' : 'var(--paper)';
   return (
-    <div className={`rounded-xl border px-4 py-3.5 flex flex-col gap-2.5 transition-colors ${borderClass}`}>
+    <div style={{ border: `1px solid ${borderColor}`, borderRadius: 3, padding: '20px 22px', background: bgColor, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.5)', transition: 'border-color 200ms ease, background 200ms ease' }}>
       {children}
-      <div className="flex items-center gap-2 pt-0.5">
-        <button onClick={onAccept}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-            status === 'accepted' ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-          }`}>
-          {status === 'accepted'
-            ? <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Accepted</>
-            : 'Accept'}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 18 }}>
+        <button onClick={onAccept} style={{ padding: '7px 16px', borderRadius: 2, background: status === 'accepted' ? 'var(--moss)' : 'transparent', color: status === 'accepted' ? 'var(--paper)' : 'var(--sumi)', border: status === 'accepted' ? 'none' : '1px solid var(--rule)', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, cursor: 'pointer', boxShadow: status === 'accepted' ? '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)' : 'none' }}>
+          {status === 'accepted' ? '✓ Accepted' : 'Accept'}
         </button>
-        <button onClick={onCancel}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-            status === 'cancelled' ? 'bg-amber-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-          }`}>
+        <button onClick={onCancel} style={{ padding: '7px 16px', borderRadius: 2, background: status === 'cancelled' ? 'var(--shu)' : 'transparent', color: status === 'cancelled' ? 'var(--paper)' : 'var(--sumi)', border: status === 'cancelled' ? 'none' : '1px solid var(--rule)', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
           {status === 'cancelled' ? 'Using Original' : 'Cancel'}
         </button>
+        {(addedCount > 0 || removedCount > 0) && (
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, fontFamily: '"JetBrains Mono", monospace', fontSize: 10, color: 'var(--sumi-mute)', letterSpacing: '0.16em', textTransform: 'uppercase' }}>
+            {addedCount > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 10, height: 10, background: '#DDEFCE', border: '1px solid var(--moss-soft)', display: 'inline-block', flexShrink: 0 }} />
+                +{addedCount} added
+              </span>
+            )}
+            {removedCount > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 10, height: 10, background: '#F8E2DC', border: '1px solid var(--shu-soft)', display: 'inline-block', flexShrink: 0 }} />
+                −{removedCount} cut
+              </span>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );
 });
-
-function NavLink({ onClick, children, indent = false }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left rounded-lg text-xs transition-colors hover:bg-gray-100 ${
-        indent
-          ? 'px-2 py-1 pl-4 text-gray-400 hover:text-gray-700'
-          : 'px-2 py-1.5 text-gray-500 hover:text-gray-900'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
 function TailoredResumeDrawerInner({
   data,
@@ -97,17 +107,17 @@ function TailoredResumeDrawerInner({
   initialEditValues = null,
   savedMatchScore = null,
 }) {
-  const requirements = job?.requirements_array || [];
+  const requirements    = job?.requirements_array || [];
   const totalRequirements = requirements.length;
-  const resumeSkills = parsedResume?.skills || [];
+  const resumeSkills    = parsedResume?.skills || [];
   const missingSkillsSet = new Set(
     requirements.filter(r => !skillMatches(resumeSkills, r)).map(s => s.toLowerCase())
   );
-  const baseMatchedCount = requirements.filter(r => skillMatches(resumeSkills, r)).length;
-  const matchedReqSkills = requirements.filter(r =>  skillMatches(resumeSkills, r));
-  const missingReqSkills = requirements.filter(r => !skillMatches(resumeSkills, r));
+  const baseMatchedCount  = requirements.filter(r =>  skillMatches(resumeSkills, r)).length;
+  const matchedReqSkills  = requirements.filter(r =>  skillMatches(resumeSkills, r));
+  const missingReqSkills  = requirements.filter(r => !skillMatches(resumeSkills, r));
 
-  const pdfRef = useRef(null);
+  const pdfRef     = useRef(null);
   const contentRef = useRef(null);
   const sectionRefs = useRef({});
 
@@ -119,10 +129,10 @@ function TailoredResumeDrawerInner({
 
   const handleClose = useCallback(() => {
     setVisible(false);
-    setTimeout(onClose, 300);
+    setTimeout(onClose, 320);
   }, [onClose]);
 
-  const isV3 = data?._version === 3;
+  const isV3        = data?._version === 3;
   const isNewFormat = !isV3 && typeof data.summary === 'string';
 
   const [reviews, setReviews] = useState(() => {
@@ -138,16 +148,15 @@ function TailoredResumeDrawerInner({
     return r;
   });
 
-  const [editMode, setEditMode] = useState({});
+  const [editMode,   setEditMode]   = useState({});
   const [editValues, setEditValues] = useState(initialEditValues ?? {});
   const [committing, setCommitting] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [toastMessage, setToastMessage] = useState('');
-  const [flashing, setFlashing] = useState(false);
-  const prevScoreRef = useRef(null);
-
-  // Open set for experience accordions — default: index 0 (most recent job)
+  const [toast,      setToast]      = useState(null);
+  const [toastMsg,   setToastMsg]   = useState('');
+  const [flashing,   setFlashing]   = useState(false);
+  const [activeSection, setActiveSection] = useState('summary');
   const [openExperience, setOpenExperience] = useState(() => new Set([0]));
+  const prevScoreRef = useRef(null);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') handleClose(); };
@@ -177,8 +186,8 @@ function TailoredResumeDrawerInner({
       (exp.bullets || []).forEach((bullet, j) => {
         const rkey = `exp-${i}-${j}`;
         if (getReview(rkey) === 'accepted') {
-          const tailored = editValues[rkey] || (typeof bullet === 'object' ? bullet.tailored_text : bullet);
-          detectSkills(tailored || '').forEach(s => all.add(s));
+          const t = editValues[rkey] || (typeof bullet === 'object' ? bullet.tailored_text : bullet);
+          detectSkills(t || '').forEach(s => all.add(s));
         }
       });
     });
@@ -186,8 +195,8 @@ function TailoredResumeDrawerInner({
       (proj.bullets || []).forEach((bullet, j) => {
         const rkey = `proj-${i}-${j}`;
         if (getReview(rkey) === 'accepted') {
-          const tailored = editValues[rkey] || (typeof bullet === 'object' ? bullet.tailored_text : bullet);
-          detectSkills(tailored || '').forEach(s => all.add(s));
+          const t = editValues[rkey] || (typeof bullet === 'object' ? bullet.tailored_text : bullet);
+          detectSkills(t || '').forEach(s => all.add(s));
         }
       });
     });
@@ -213,12 +222,12 @@ function TailoredResumeDrawerInner({
   const getFinalBullet = (bullet, i, j, prefix = 'exp') => {
     const rkey = `${prefix}-${i}-${j}`;
     if (editValues[rkey] !== undefined) return editValues[rkey];
-    const status = getReview(rkey);
-    const orig     = typeof bullet === 'object' ? (bullet.original_text ?? '') : cleanBulletText(bullet);
+    const status  = getReview(rkey);
+    const orig    = typeof bullet === 'object' ? (bullet.original_text ?? '') : cleanBulletText(bullet);
     const tailored = typeof bullet === 'object' ? (bullet.tailored_text  ?? '') : cleanBulletText(bullet);
-    const isNew = typeof bullet === 'object' && !!bullet.is_new_suggestion;
+    const isNew   = typeof bullet === 'object' && !!bullet.is_new_suggestion;
     if (status === 'cancelled') return isNew ? null : orig;
-    if (status === 'accepted') return tailored;
+    if (status === 'accepted')  return tailored;
     return isNew ? null : tailored;
   };
 
@@ -231,6 +240,7 @@ function TailoredResumeDrawerInner({
       + (data.tailored_projects   || []).reduce((s, p) => s + (p.bullets?.length || 0), 0);
 
   const reviewedCount = Object.keys(reviews).length + Object.keys(editValues).length;
+  const progressPct   = totalItems > 0 ? Math.min(100, Math.round((reviewedCount / totalItems) * 100)) : 0;
 
   const handleDownload = async () => {
     const html2pdf = (await import('html2pdf.js')).default;
@@ -246,7 +256,7 @@ function TailoredResumeDrawerInner({
   };
 
   const summaryStatus = getReview('summary');
-  const finalSummary = editValues['summary'] ?? (summaryStatus === 'cancelled' ? (summaryObj.original_text || '') : summaryObj.tailored_text);
+  const finalSummary  = editValues['summary'] ?? (summaryStatus === 'cancelled' ? (summaryObj.original_text || '') : summaryObj.tailored_text);
 
   function openEdit(key, currentText) {
     if (!(key in editValues)) setEditValues(prev => ({ ...prev, [key]: currentText }));
@@ -268,7 +278,7 @@ function TailoredResumeDrawerInner({
       setToast('success');
     } catch (err) {
       console.error('[commit]', err);
-      setToastMessage(err.message ?? String(err));
+      setToastMsg(err.message ?? String(err));
       setToast('error');
     } finally {
       setCommitting(false);
@@ -301,243 +311,439 @@ function TailoredResumeDrawerInner({
     });
   }, []);
 
-  // V3 extracted sections
-  const v3Summary    = isV3 ? (data['Summary']        || '')  : '';
+  // V3 sections
+  const v3Summary    = isV3 ? (data['Summary']        || '') : '';
   const v3Experience = isV3 ? (data['Work Experience'] || []) : [];
   const v3Projects   = isV3 ? (data['Projects']        || []) : [];
   const v3Skills     = isV3 ? (data['Skills']          || []) : [];
   const origExperience = parsedResume?.experience || [];
   const origProjects   = parsedResume?.projects   || [];
 
-  const sidebarExpEntries = isV3 ? v3Experience : (data.tailored_experience || []);
+  // Sidebar counts
+  const summaryHasContent = isV3 ? !!v3Summary : !!summaryObj.tailored_text;
+  const summaryReviewKey  = isV3 ? 's:Summary' : 'summary';
+  const summaryReviewed   = summaryHasContent && (getReview(summaryReviewKey) !== null || summaryReviewKey in editValues) ? 1 : 0;
+  const expEntries  = isV3 ? v3Experience : (data.tailored_experience || []);
+  const expTotal    = expEntries.reduce((s, e) => s + (e.bullets?.length || 0), 0);
+  const expPrefix   = isV3 ? 'Work Experience' : 'exp';
+  const expReviewed = Object.keys({ ...reviews, ...editValues }).filter(k => k.startsWith(expPrefix + '-')).length;
+  const projEntries  = isV3 ? v3Projects : (data.tailored_projects || []);
+  const projTotal    = isV3 ? projEntries.length : projEntries.reduce((s, p) => s + (p.bullets?.length || 0), 0);
+  const projPrefix   = isV3 ? 'Projects' : 'proj';
+  const projReviewed = Object.keys({ ...reviews, ...editValues }).filter(k => k.startsWith(projPrefix + '-')).length;
+
+  const navItems = [
+    { k: 'summary',    label: 'Summary',    count: summaryHasContent ? `${summaryReviewed}/1` : '—' },
+    { k: 'skills',     label: 'Skills',     count: requirements.length > 0 ? `${matchedReqSkills.length}/${requirements.length}` : '—' },
+    { k: 'experience', label: 'Experience', count: expTotal > 0  ? `${expReviewed}/${expTotal}`   : '—' },
+    { k: 'projects',   label: 'Projects',   count: projTotal > 0 ? `${projReviewed}/${projTotal}` : '—' },
+  ];
+
+  // ── Shared render helpers ──────────────────────────────────────────────────
+
+  const editBtn = (onClick) => (
+    <button
+      className="tailor-edit-btn"
+      onClick={onClick}
+      style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid var(--rule)', borderRadius: 2, padding: '3px 7px', background: 'var(--paper)', color: 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11 }}
+    >
+      <Pencil size={10} strokeWidth={1.8} />
+    </button>
+  );
+
+  const editSaveRow = (label, isEditing, onEdit, onSave) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+      <h3 style={SECTION_HEAD}>{label}</h3>
+      {!isEditing ? (
+        <button onClick={onEdit} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: 'var(--sumi-soft)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 500 }}>
+          <Pencil size={11} strokeWidth={1.8} /> Edit
+        </button>
+      ) : (
+        <button onClick={onSave} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: 'var(--moss-deep)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
+          <Check size={11} strokeWidth={2.5} /> Save
+        </button>
+      )}
+    </div>
+  );
+
+  const textareaStyle = { width: '100%', border: '1px solid var(--rule)', borderRadius: 3, padding: '12px 16px', resize: 'none', fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', background: 'var(--paper)', outline: 'none', boxSizing: 'border-box' };
+
+  const saveBtn = (onClick) => (
+    <button onClick={onClick} style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--moss-deep)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
+      <Check size={11} strokeWidth={2.5} /> Save
+    </button>
+  );
+
+  const accordionHeader = (entry, ei, bullets, allAccepted, prefixKey, isOpen) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', background: 'var(--washi-soft)' }}>
+      <button onClick={() => toggleExp(ei)} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none' }}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, color: 'var(--sumi-mute)', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 200ms ease' }}>
+          <path d="M2 4 L6 8 L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0, flex: 1 }}>
+          <span style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 700, color: 'var(--sumi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.title}</span>
+          {entry.company && <span style={{ fontFamily: 'Inter', fontSize: 13, color: 'var(--sumi-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {entry.company}</span>}
+        </div>
+        {entry.period && <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: 'var(--sumi-mute)', flexShrink: 0, marginLeft: 8 }}>{entry.period}</span>}
+      </button>
+      <button onClick={() => acceptAllForEntry(prefixKey, ei, bullets.length)} style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 2, cursor: 'pointer', background: allAccepted ? 'rgba(90,122,78,0.08)' : 'var(--paper)', color: allAccepted ? 'var(--moss-deep)' : 'var(--sumi-mute)', border: `1px solid ${allAccepted ? 'var(--moss-soft)' : 'var(--rule)'}`, fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
+        {allAccepted ? '✓ Accepted' : 'Accept All'}
+      </button>
+    </div>
+  );
+
+  const bulletRow = (rkey, text, status, origBullet) => (
+    <div className="tailor-bullet-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', border: `1px solid ${status === 'accepted' ? 'var(--moss-soft)' : 'var(--rule)'}`, borderRadius: 3, background: status === 'accepted' ? 'rgba(90,122,78,0.04)' : 'var(--paper)', transition: 'border-color 200ms, background 200ms' }}>
+      <span style={{ marginTop: 8, width: 4, height: 4, borderRadius: '50%', background: 'var(--rule)', flexShrink: 0 }} />
+      <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', flex: 1, margin: 0 }}>
+        {editValues[rkey] !== undefined ? editValues[rkey]
+          : origBullet ? <DiffText original={origBullet} tailored={text} />
+          : text}
+      </p>
+      {editBtn(() => openEdit(rkey, text))}
+    </div>
+  );
+
+  const emptySection = (msg) => (
+    <div style={{ padding: '18px 22px', border: '1px dashed var(--rule)', borderRadius: 3, background: 'var(--washi-soft)', color: 'var(--sumi-mute)', fontSize: 13, fontStyle: 'italic', fontFamily: 'Inter' }}>{msg}</div>
+  );
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50 }} role="dialog" aria-modal="true">
+
+      {/* CSS for hover-reveal edit buttons */}
+      <style>{`
+        .tailor-bullet-row .tailor-edit-btn,
+        .tailor-proj-row .tailor-edit-btn { opacity: 0; transition: opacity 150ms; }
+        .tailor-bullet-row:hover .tailor-edit-btn,
+        .tailor-proj-row:hover .tailor-edit-btn { opacity: 1; }
+      `}</style>
 
       {/* Backdrop */}
-      <div
-        className={`fixed inset-0 bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-0'}`}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: visible ? 1 : 0 }}
+        transition={{ duration: 0.25 }}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(27,22,18,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 24px', overflowY: 'auto' }}
         onClick={handleClose}
         data-testid="drawer-backdrop"
-      />
+      >
+        {/* Modal */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97, y: 14 }}
+          animate={visible ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.97, y: 14 }}
+          transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+          style={{ width: '100%', maxWidth: 980, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, boxShadow: '0 30px 60px -20px rgba(27,22,18,0.4)', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 80px)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Shu top stripe */}
+          <div style={{ height: 3, background: 'var(--shu)', borderRadius: '3px 3px 0 0', flexShrink: 0 }} />
 
-      {/* Drawer panel */}
-      <div className={`fixed inset-y-0 right-0 w-full max-w-2xl bg-white border-l border-gray-200 flex flex-col transition-transform duration-300 ease-in-out ${visible ? 'translate-x-0' : 'translate-x-full'}`}>
-
-        {/* Sticky header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0 bg-white z-10">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">
-              {autoAccept ? 'Resume Ready to Download' : 'Review Tailored Resume'}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">
-              {autoAccept ? 'All changes auto-applied · ' : ''}{jobTitle} · {company}
-            </p>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold transition-all duration-300 ${
-              flashing ? 'bg-green-600 text-white ring-2 ring-green-300 scale-110' : 'bg-green-50 text-green-700 ring-1 ring-green-200'
-            }`}>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              {dynamicScore}% match
-            </div>
-            <button onClick={handleDownload}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              PDF
-            </button>
-            <button onClick={handleClose} aria-label="Close drawer"
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Body: left sidebar + scrollable content */}
-        <div className="flex flex-1 overflow-hidden">
-
-          {/* Left sidebar nav */}
-          <nav className="w-40 shrink-0 border-r border-gray-100 bg-gray-50/50 overflow-y-auto py-5 px-3 flex flex-col gap-0.5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-300 mb-2 px-2">Navigate</p>
-            <NavLink onClick={() => scrollTo('summary')}>Summary</NavLink>
-            <NavLink onClick={() => scrollTo('skills')}>Skills</NavLink>
-            {sidebarExpEntries.length > 0 && (
-              <>
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-300 mt-3 mb-1 px-2">Experience</p>
-                {sidebarExpEntries.map((entry, ei) => (
-                  <NavLink key={ei} onClick={() => scrollTo(`exp-${ei}`)} indent>
-                    {entry.company || entry.title}
-                  </NavLink>
-                ))}
-              </>
-            )}
-            <NavLink onClick={() => scrollTo('projects')}>Projects</NavLink>
-          </nav>
-
-          {/* Scrollable content */}
-          <div ref={contentRef} className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-7">
-
-            {/* Skill Alignment */}
-            {requirements.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Skill Alignment</p>
-                  <span className="text-xs text-gray-400 tabular-nums">
-                    <span className="font-semibold text-green-600">{matchedReqSkills.length}</span>
-                    <span> / {requirements.length} matched</span>
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {matchedReqSkills.map(s => (
-                    <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-green-50 text-green-700 border border-green-200">
-                      <svg className="w-2.5 h-2.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                      {s}
-                    </span>
-                  ))}
-                  {missingReqSkills.map(s => (
-                    <span key={s} className="px-2.5 py-1 text-xs font-medium rounded-full bg-white text-gray-400 border border-gray-200">{s}</span>
-                  ))}
-                </div>
+          {/* HEADER */}
+          <header style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.24em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 6 }}>
+                Tailoring · {company}
               </div>
-            )}
+              <h2 className="tm-mincho" style={{ margin: 0, fontSize: 26, fontWeight: 700, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
+                {autoAccept ? 'Résumé ready to download' : 'Review tailored résumé'}
+              </h2>
+              <div style={{ marginTop: 6, fontSize: 13, color: 'var(--sumi-mute)', fontFamily: 'Inter' }}>
+                {jobTitle} <span style={{ color: 'var(--sumi-faint)' }}>·</span> {company}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              {/* Match score badge */}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 2, background: flashing ? 'var(--moss)' : '#E8EFD9', color: flashing ? 'var(--paper)' : 'var(--moss-deep)', fontFamily: 'Inter', fontSize: 13, fontWeight: 700, border: `1px solid ${flashing ? 'var(--moss)' : 'var(--moss-soft)'}`, transition: 'background 300ms ease, color 300ms ease, border-color 300ms ease' }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <rect x="2"    y="9" width="2.6" height="5"  fill="currentColor"/>
+                  <rect x="6.7"  y="6" width="2.6" height="8"  fill="currentColor"/>
+                  <rect x="11.4" y="3" width="2.6" height="11" fill="currentColor"/>
+                </svg>
+                {dynamicScore}% match
+              </span>
+              {/* PDF */}
+              <button onClick={handleDownload} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', color: 'var(--sumi)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 8 L7 12 L11 8 M7 2 V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                PDF
+              </button>
+              {/* Close */}
+              <button onClick={handleClose} aria-label="Close" style={{ width: 32, height: 32, border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 3 L11 11 M11 3 L3 11" stroke="var(--sumi)" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </header>
 
-            {/* ── V3 sections ──────────────────────────────────────────────────── */}
-            {isV3 && (
-              <>
-                {/* Summary */}
-                {v3Summary && (
-                  <div ref={el => { sectionRefs.current['summary'] = el; }}>
-                    <div className="flex items-center justify-between mb-2.5">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Summary</p>
-                      {!editMode['s:Summary'] ? (
-                        <button onClick={() => openEdit('s:Summary', editValues['s:Summary'] ?? v3Summary)}
-                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors cursor-pointer">
-                          <Pencil size={11} strokeWidth={2} /> Edit
-                        </button>
-                      ) : (
-                        <button onClick={() => saveEdit('s:Summary')}
-                          className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 transition-colors cursor-pointer font-medium">
-                          <Check size={11} strokeWidth={2.5} /> Save
-                        </button>
+          {/* BODY */}
+          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', flex: 1, overflow: 'hidden' }}>
+
+            {/* Sidebar nav */}
+            <nav style={{ borderRight: '1px solid var(--rule)', background: 'var(--washi-soft)', padding: '22px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.24em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 14 }}>Navigate</div>
+              {navItems.map(item => {
+                const active = activeSection === item.k;
+                return (
+                  <button key={item.k} onClick={() => { setActiveSection(item.k); scrollTo(item.k); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 10px', textAlign: 'left', cursor: 'pointer', background: active ? 'var(--paper)' : 'transparent', border: active ? '1px solid var(--rule)' : '1px solid transparent', borderLeft: active ? '3px solid var(--shu)' : '3px solid transparent', borderRadius: 2, fontFamily: 'Inter', fontSize: 13, fontWeight: active ? 600 : 500, color: active ? 'var(--sumi)' : 'var(--sumi-soft)', transition: 'all 150ms ease' }}>
+                    <span>{item.label}</span>
+                    <span className="tm-mono" style={{ fontSize: 10, color: 'var(--sumi-mute)' }}>{item.count}</span>
+                  </button>
+                );
+              })}
+              <div style={{ marginTop: 24, padding: 12, border: '1px dashed var(--rule)', borderRadius: 2, fontSize: 11, color: 'var(--sumi-mute)', lineHeight: 1.5, fontFamily: 'Inter', fontStyle: 'italic' }}>
+                Accept or revert each AI edit. Score updates as you go.
+              </div>
+            </nav>
+
+            {/* Scrollable content */}
+            <div ref={contentRef} style={{ overflowY: 'auto', padding: '24px 28px 32px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+              {/* Skill Alignment — always shown */}
+              {requirements.length > 0 && (
+                <section ref={el => { sectionRefs.current['skills'] = el; }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <h3 style={SECTION_HEAD}>Skill alignment</h3>
+                    <div style={{ fontSize: 12, color: 'var(--sumi-mute)', fontFamily: 'Inter' }}>
+                      <span className="tm-mincho" style={{ fontSize: 14, fontWeight: 700, color: 'var(--moss-deep)' }}>{matchedReqSkills.length}</span>
+                      <span> / {requirements.length} matched</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {matchedReqSkills.map(s => (
+                      <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', border: '1px solid var(--moss-soft)', borderRadius: 999, background: 'rgba(90,122,78,0.06)', fontSize: 12, color: 'var(--moss-deep)', fontWeight: 500, fontFamily: 'Inter' }}>
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6 L5 9 L10 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        {s}
+                      </span>
+                    ))}
+                    {missingReqSkills.map(s => (
+                      <span key={s} style={{ padding: '6px 14px', border: '1px solid var(--rule)', borderRadius: 999, background: 'var(--paper)', fontSize: 12, color: 'var(--sumi-mute)', fontWeight: 500, fontFamily: 'Inter' }}>{s}</span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* ── V3 sections ─────────────────────────────────────────────── */}
+              {isV3 && (
+                <>
+                  {v3Summary && (
+                    <section ref={el => { sectionRefs.current['summary'] = el; }}>
+                      {editSaveRow('Summary', !!editMode['s:Summary'],
+                        () => openEdit('s:Summary', editValues['s:Summary'] ?? v3Summary),
+                        () => saveEdit('s:Summary')
                       )}
-                    </div>
-                    {editMode['s:Summary'] ? (
-                      <textarea value={editValues['s:Summary'] ?? v3Summary}
-                        onChange={(e) => setEditValues(prev => ({ ...prev, 's:Summary': e.target.value }))}
-                        className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors"
-                        rows={4} />
-                    ) : (
-                      <p className="text-sm text-gray-800 leading-relaxed rounded-xl border border-gray-100 px-4 py-3.5 bg-gray-50/40">
-                        {editValues['s:Summary'] !== undefined
-                          ? editValues['s:Summary']
-                          : parsedResume?.summary
-                          ? <DiffText original={parsedResume.summary} tailored={v3Summary} />
-                          : v3Summary}
-                      </p>
-                    )}
-                  </div>
-                )}
+                      {editMode['s:Summary'] ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <textarea value={editValues['s:Summary'] ?? v3Summary} onChange={(e) => setEditValues(prev => ({ ...prev, 's:Summary': e.target.value }))} style={{ ...textareaStyle, fontFamily: '"Shippori Mincho","Noto Serif JP",serif', fontSize: 15, lineHeight: 1.85 }} rows={4} />
+                          {saveBtn(() => saveEdit('s:Summary'))}
+                        </div>
+                      ) : (
+                        <div style={{ background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, padding: '20px 22px', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.5)' }}>
+                          <p className="tm-mincho" style={{ margin: 0, fontSize: 15, lineHeight: 1.85, color: 'var(--sumi)' }}>
+                            {editValues['s:Summary'] !== undefined ? editValues['s:Summary']
+                              : parsedResume?.summary ? <DiffText original={parsedResume.summary} tailored={v3Summary} />
+                              : v3Summary}
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  )}
 
-                {/* Skills */}
-                {v3Skills.length > 0 && (
-                  <div ref={el => { sectionRefs.current['skills'] = el; }}>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Skills</p>
-                    <div className="flex flex-wrap gap-2">
-                      {v3Skills.map((item, i) => (
-                        <span key={i} className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{item}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  {v3Skills.length > 0 && (
+                    <section>
+                      <h3 style={SECTION_HEAD}>Skills</h3>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {v3Skills.map((item, i) => (
+                          <span key={i} style={{ padding: '6px 14px', border: '1px solid var(--rule)', borderRadius: 999, background: 'var(--paper)', fontSize: 12, color: 'var(--sumi)', fontWeight: 500, fontFamily: 'Inter' }}>{item}</span>
+                        ))}
+                      </div>
+                    </section>
+                  )}
 
-                {/* Experience — accordions */}
-                {v3Experience.length > 0 && (
-                  <div ref={el => { sectionRefs.current['experience'] = el; }} className="flex flex-col gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Work Experience</p>
-                    {v3Experience.map((entry, ei) => {
-                      const isOpen = openExperience.has(ei);
-                      const origEntry = origExperience[ei];
-                      const origBullets = origEntry
-                        ? (Array.isArray(origEntry.bullets) && origEntry.bullets.length > 0
-                            ? origEntry.bullets
-                            : (origEntry.description || '').split(/[.!?]\s+/).filter(s => s.trim().length > 10))
-                        : [];
-                      const bullets = entry.bullets || [];
-                      const allAccepted = bullets.length > 0
-                        && bullets.every((_, bi) => reviews[`Work Experience-${ei}-${bi}`] === 'accepted');
-
-                      return (
-                        <div key={ei} ref={el => { sectionRefs.current[`exp-${ei}`] = el; }}
-                          className="rounded-xl border border-gray-200 overflow-hidden">
-
-                          {/* Accordion header */}
-                          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50/70">
-                            <button onClick={() => toggleExp(ei)}
-                              className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
-                              <ChevronDown size={14} strokeWidth={2}
-                                className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`} />
-                              <div className="flex items-baseline gap-1.5 min-w-0 flex-1">
-                                <span className="text-sm font-bold text-gray-900 truncate">{entry.title}</span>
-                                {entry.company && <span className="text-sm text-gray-400 truncate">· {entry.company}</span>}
-                              </div>
-                              {entry.period && <span className="text-xs text-gray-400 shrink-0 tabular-nums ml-2">{entry.period}</span>}
-                            </button>
-                            <button
-                              onClick={() => acceptAllForEntry('Work Experience', ei, bullets.length)}
-                              className={`ml-1 shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer border ${
-                                allAccepted
-                                  ? 'bg-green-50 text-green-700 border-green-200'
-                                  : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
-                              }`}
-                            >
-                              {allAccepted ? '✓ Accepted' : 'Accept All'}
-                            </button>
-                          </div>
-
-                          {/* Accordion body */}
-                          {isOpen && (
-                            <div className="flex flex-col gap-2 px-4 py-3">
-                              {bullets.map((bullet, bi) => {
-                                const rkey = `Work Experience-${ei}-${bi}`;
-                                const origBullet = origBullets[bi] || '';
-                                const status = reviews[rkey] || null;
-                                const text = editValues[rkey] ?? bullet;
-
-                                if (editMode[rkey]) {
-                                  return (
-                                    <div key={bi} className="flex flex-col gap-1.5">
-                                      <textarea value={text}
-                                        onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                        className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors"
-                                        rows={3} />
-                                      <button onClick={() => saveEdit(rkey)}
-                                        className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                        <Check size={11} strokeWidth={2.5} /> Save
-                                      </button>
+                  {v3Experience.length > 0 && (
+                    <section ref={el => { sectionRefs.current['experience'] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <h3 style={SECTION_HEAD}>Work Experience</h3>
+                      {v3Experience.map((entry, ei) => {
+                        const isOpen    = openExperience.has(ei);
+                        const origEntry = origExperience[ei];
+                        const origBullets = origEntry
+                          ? (Array.isArray(origEntry.bullets) && origEntry.bullets.length > 0
+                              ? origEntry.bullets
+                              : (origEntry.description || '').split(/[.!?]\s+/).filter(s => s.trim().length > 10))
+                          : [];
+                        const bullets    = entry.bullets || [];
+                        const allAccepted = bullets.length > 0 && bullets.every((_, bi) => reviews[`Work Experience-${ei}-${bi}`] === 'accepted');
+                        return (
+                          <div key={ei} ref={el => { sectionRefs.current[`exp-${ei}`] = el; }} style={{ border: '1px solid var(--rule)', borderRadius: 3, overflow: 'hidden' }}>
+                            {accordionHeader(entry, ei, bullets, allAccepted, 'Work Experience', isOpen)}
+                            {isOpen && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 18px' }}>
+                                {bullets.map((bullet, bi) => {
+                                  const rkey  = `Work Experience-${ei}-${bi}`;
+                                  const text  = editValues[rkey] ?? bullet;
+                                  const origB = origBullets[bi] || '';
+                                  const status = reviews[rkey] || null;
+                                  if (editMode[rkey]) return (
+                                    <div key={bi} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                      {saveBtn(() => saveEdit(rkey))}
                                     </div>
                                   );
-                                }
+                                  return <div key={bi}>{bulletRow(rkey, text, status, origB)}</div>;
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </section>
+                  )}
 
+                  {v3Projects.length > 0 && (
+                    <section ref={el => { sectionRefs.current['projects'] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <h3 style={SECTION_HEAD}>Projects</h3>
+                      {v3Projects.map((proj, pi) => {
+                        const origProj = origProjects.find(p => p.name === proj.name) ?? origProjects[pi];
+                        const origDesc = origProj?.description || '';
+                        const rkey = `Projects-${pi}-d`;
+                        const text = editValues[rkey] ?? (proj.description || '');
+                        return (
+                          <div key={pi}>
+                            <h4 style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 700, color: 'var(--sumi)', marginBottom: 10, marginTop: 0 }}>{proj.name}</h4>
+                            {editMode[rkey] ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                {saveBtn(() => saveEdit(rkey))}
+                              </div>
+                            ) : (
+                              <div className="tailor-proj-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', border: '1px solid var(--rule)', borderRadius: 3, background: 'var(--paper)' }}>
+                                <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', flex: 1, margin: 0 }}>
+                                  {editValues[rkey] !== undefined ? editValues[rkey]
+                                    : origDesc ? <DiffText original={origDesc} tailored={proj.description || ''} />
+                                    : (proj.description || '')}
+                                </p>
+                                {editBtn(() => openEdit(rkey, text))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </section>
+                  )}
+                </>
+              )}
+
+              {/* ── V1/V2 legacy sections ───────────────────────────────────── */}
+              {!isV3 && (
+                <>
+                  {summaryObj.tailored_text && (
+                    <section ref={el => { sectionRefs.current['summary'] = el; }}>
+                      {editSaveRow('Summary', !!editMode['summary'],
+                        () => openEdit('summary', editValues['summary'] ?? summaryObj.tailored_text),
+                        () => saveEdit('summary')
+                      )}
+                      {editMode['summary'] ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <textarea value={editValues['summary'] ?? summaryObj.tailored_text} onChange={(e) => setEditValues(prev => ({ ...prev, summary: e.target.value }))} style={{ ...textareaStyle, fontFamily: '"Shippori Mincho","Noto Serif JP",serif', fontSize: 15, lineHeight: 1.85 }} rows={4} />
+                          {saveBtn(() => saveEdit('summary'))}
+                        </div>
+                      ) : isNewFormat ? (
+                        <div style={{ background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, padding: '20px 22px', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.5)' }}>
+                          <p className="tm-mincho" style={{ margin: 0, fontSize: 15, lineHeight: 1.85, color: 'var(--sumi)' }}>
+                            {editValues['summary'] ?? summaryObj.tailored_text}
+                          </p>
+                        </div>
+                      ) : (() => {
+                        const { added: aw, removed: rw } = computeDiffCounts(summaryObj.original_text, summaryObj.tailored_text);
+                        return (
+                          <ReviewCard status={summaryStatus}
+                            onAccept={() => setReview('summary', summaryStatus === 'accepted' ? null : 'accepted')}
+                            onCancel={() => setReview('summary', summaryStatus === 'cancelled' ? null : 'cancelled')}
+                            addedCount={aw} removedCount={rw}>
+                            <p className="tm-mincho" style={{ margin: 0, fontSize: 15, lineHeight: 1.85, color: 'var(--sumi)' }}>
+                              {editValues['summary'] !== undefined ? editValues['summary']
+                                : summaryStatus === 'cancelled' ? (summaryObj.original_text || '')
+                                : <DiffText original={summaryObj.original_text} tailored={summaryObj.tailored_text} />}
+                            </p>
+                          </ReviewCard>
+                        );
+                      })()}
+                    </section>
+                  )}
+
+                  {(data.skills || []).length > 0 && (
+                    <section>
+                      <h3 style={SECTION_HEAD}>Skills</h3>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {data.skills.map((skill, i) => (
+                          <span key={i} style={{ padding: '6px 14px', border: '1px solid var(--rule)', borderRadius: 999, background: 'var(--paper)', fontSize: 12, color: 'var(--sumi)', fontWeight: 500, fontFamily: 'Inter' }}>{skill}</span>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  <section ref={el => { sectionRefs.current['experience'] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <h3 style={SECTION_HEAD}>Experience</h3>
+                    {(data.tailored_experience || []).length === 0 && emptySection('No experience sections returned by AI.')}
+                    {(data.tailored_experience || []).map((exp, i) => {
+                      const isOpen     = openExperience.has(i);
+                      const bullets    = exp.bullets || [];
+                      const allAccepted = bullets.length > 0 && bullets.every((_, j) => reviews[`exp-${i}-${j}`] === 'accepted');
+                      return (
+                        <div key={i} ref={el => { sectionRefs.current[`exp-${i}`] = el; }} style={{ border: '1px solid var(--rule)', borderRadius: 3, overflow: 'hidden' }}>
+                          {accordionHeader(exp, i, bullets, allAccepted, 'exp', isOpen)}
+                          {isOpen && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 18px' }}>
+                              {bullets.map((bullet, j) => {
+                                const rkey = `exp-${i}-${j}`;
+                                if (typeof bullet === 'string') {
+                                  const text   = editValues[rkey] ?? bullet;
+                                  const status = reviews[rkey] || null;
+                                  if (editMode[rkey]) return (
+                                    <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                      {saveBtn(() => saveEdit(rkey))}
+                                    </div>
+                                  );
+                                  return <div key={j}>{bulletRow(rkey, text, status, '')}</div>;
+                                }
+                                const orig    = bullet.original_text ?? '';
+                                const tailored = bullet.tailored_text ?? '';
+                                const isNew   = !!bullet.is_new_suggestion;
+                                const status  = getReview(rkey);
+                                if (editMode[rkey]) return (
+                                  <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <textarea value={editValues[rkey] ?? tailored} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                    {saveBtn(() => saveEdit(rkey))}
+                                  </div>
+                                );
+                                const { added: aw, removed: rw } = computeDiffCounts(orig, tailored);
                                 return (
-                                  <div key={bi} className={`group flex items-start gap-2.5 px-4 py-2.5 rounded-xl border transition-colors ${
-                                    status === 'accepted' ? 'border-green-200 bg-green-50/40' : 'border-gray-100 bg-gray-50/30'
-                                  }`}>
-                                    <span className="mt-2 w-1 h-1 rounded-full bg-gray-300 shrink-0" />
-                                    <p className="text-sm text-gray-800 leading-relaxed flex-1">
-                                      {editValues[rkey] !== undefined ? editValues[rkey]
-                                        : origBullet ? <DiffText original={origBullet} tailored={bullet} />
-                                        : bullet}
-                                    </p>
-                                    <button onClick={() => openEdit(rkey, text)} aria-label={`Edit bullet ${ei}-${bi}`}
-                                      className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer border border-gray-200 rounded-md px-1.5 py-0.5 shrink-0 bg-white">
-                                      <Pencil size={10} strokeWidth={2} />
-                                    </button>
+                                  <div key={j} style={{ position: 'relative' }}>
+                                    <ReviewCard status={status}
+                                      onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
+                                      onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}
+                                      addedCount={isNew ? 0 : aw} removedCount={isNew ? 0 : rw}>
+                                      {isNew ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                          <span style={{ display: 'inline-flex', alignItems: 'center', fontFamily: '"JetBrains Mono",monospace', fontSize: 9, letterSpacing: '0.2em', fontWeight: 700, color: 'var(--moss-deep)', background: 'rgba(90,122,78,0.08)', border: '1px solid var(--moss-soft)', borderRadius: 2, padding: '4px 8px' }}>AI Suggestion</span>
+                                          <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0 }}>{editValues[rkey] !== undefined ? editValues[rkey] : tailored}</p>
+                                        </div>
+                                      ) : (
+                                        <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0 }}>
+                                          {editValues[rkey] !== undefined ? editValues[rkey]
+                                            : status === 'cancelled' ? orig
+                                            : <DiffText original={orig} tailored={tailored} />}
+                                        </p>
+                                      )}
+                                    </ReviewCard>
+                                    <div style={{ position: 'absolute', top: 12, right: 12 }}>
+                                      {editBtn(() => openEdit(rkey, editValues[rkey] ?? tailored))}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -546,465 +752,223 @@ function TailoredResumeDrawerInner({
                         </div>
                       );
                     })}
-                  </div>
-                )}
+                  </section>
 
-                {/* Projects */}
-                {v3Projects.length > 0 && (
-                  <div ref={el => { sectionRefs.current['projects'] = el; }} className="flex flex-col gap-4">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Projects</p>
-                    {v3Projects.map((proj, pi) => {
-                      const origProj = origProjects.find(p => p.name === proj.name) ?? origProjects[pi];
-                      const origDesc = origProj?.description || '';
-                      const rkey = `Projects-${pi}-d`;
-                      const text = editValues[rkey] ?? (proj.description || '');
-                      return (
-                        <div key={pi}>
-                          <h3 className="text-sm font-bold text-gray-900 mb-2">{proj.name}</h3>
-                          {editMode[rkey] ? (
-                            <div className="flex flex-col gap-1.5">
-                              <textarea value={text}
-                                onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors"
-                                rows={3} />
-                              <button onClick={() => saveEdit(rkey)}
-                                className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                <Check size={11} strokeWidth={2.5} /> Save
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="group flex items-start gap-2.5 px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50/30">
-                              <p className="text-sm text-gray-800 leading-relaxed flex-1">
-                                {editValues[rkey] !== undefined ? editValues[rkey]
-                                  : origDesc ? <DiffText original={origDesc} tailored={proj.description || ''} />
-                                  : (proj.description || '')}
-                              </p>
-                              <button onClick={() => openEdit(rkey, text)} aria-label={`Edit project ${pi}`}
-                                className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer border border-gray-200 rounded-md px-1.5 py-0.5 shrink-0 bg-white">
-                                <Pencil size={10} strokeWidth={2} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ── V1/V2 legacy sections ─────────────────────────────────────────── */}
-            {!isV3 && (
-              <>
-                {/* Summary */}
-                {summaryObj.tailored_text && (
-                  <div ref={el => { sectionRefs.current['summary'] = el; }}>
-                    <div className="flex items-center justify-between mb-2.5">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Summary</p>
-                      {!editMode['summary'] ? (
-                        <button onClick={() => openEdit('summary', editValues['summary'] ?? summaryObj.tailored_text)}
-                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors cursor-pointer">
-                          <Pencil size={11} strokeWidth={2} /> Edit
-                        </button>
-                      ) : (
-                        <button onClick={() => saveEdit('summary')}
-                          className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 transition-colors cursor-pointer font-medium">
-                          <Check size={11} strokeWidth={2.5} /> Save
-                        </button>
-                      )}
-                    </div>
-                    {editMode['summary'] ? (
-                      <textarea value={editValues['summary'] ?? summaryObj.tailored_text}
-                        onChange={(e) => setEditValues(prev => ({ ...prev, summary: e.target.value }))}
-                        className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors"
-                        rows={4} />
-                    ) : isNewFormat ? (
-                      <p className="text-sm text-gray-800 leading-relaxed rounded-xl border border-gray-100 px-4 py-3.5 bg-gray-50/40">
-                        {editValues['summary'] ?? summaryObj.tailored_text}
-                      </p>
-                    ) : (
-                      <ReviewCard
-                        status={summaryStatus}
-                        onAccept={() => setReview('summary', summaryStatus === 'accepted' ? null : 'accepted')}
-                        onCancel={() => setReview('summary', summaryStatus === 'cancelled' ? null : 'cancelled')}
-                      >
-                        <p className="text-sm text-gray-800 leading-relaxed">
-                          {editValues['summary'] !== undefined ? editValues['summary']
-                            : summaryStatus === 'cancelled' ? (summaryObj.original_text || '')
-                            : <DiffText original={summaryObj.original_text} tailored={summaryObj.tailored_text} />}
-                        </p>
-                      </ReviewCard>
-                    )}
-                  </div>
-                )}
-
-                {/* Skills */}
-                {(data.skills || []).length > 0 && (
-                  <div ref={el => { sectionRefs.current['skills'] = el; }}>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Skills</p>
-                    <div className="flex flex-wrap gap-2">
-                      {data.skills.map((skill, i) => (
-                        <span key={i} className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">{skill}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Experience — accordions */}
-                <div ref={el => { sectionRefs.current['experience'] = el; }} className="flex flex-col gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Experience</p>
-                  {(data.tailored_experience || []).length === 0 && (
-                    <p className="text-xs text-gray-400 italic">No experience sections returned by AI.</p>
-                  )}
-                  {(data.tailored_experience || []).map((exp, i) => {
-                    const isOpen = openExperience.has(i);
-                    const bullets = exp.bullets || [];
-                    const allAccepted = bullets.length > 0
-                      && bullets.every((_, j) => reviews[`exp-${i}-${j}`] === 'accepted');
-
-                    return (
-                      <div key={i} ref={el => { sectionRefs.current[`exp-${i}`] = el; }}
-                        className="rounded-xl border border-gray-200 overflow-hidden">
-
-                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50/70">
-                          <button onClick={() => toggleExp(i)} className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
-                            <ChevronDown size={14} strokeWidth={2}
-                              className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`} />
-                            <div className="flex items-baseline gap-1.5 min-w-0 flex-1">
-                              <span className="text-sm font-bold text-gray-900 truncate">{exp.title}</span>
-                              {exp.company && <span className="text-sm text-gray-400 truncate">· {exp.company}</span>}
-                            </div>
-                            {exp.period && <span className="text-xs text-gray-400 shrink-0 tabular-nums ml-2">{exp.period}</span>}
-                          </button>
-                          <button onClick={() => acceptAllForEntry('exp', i, bullets.length)}
-                            className={`ml-1 shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer border ${
-                              allAccepted
-                                ? 'bg-green-50 text-green-700 border-green-200'
-                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:border-gray-300'
-                            }`}>
-                            {allAccepted ? '✓ Accepted' : 'Accept All'}
-                          </button>
-                        </div>
-
-                        {isOpen && (
-                          <div className="flex flex-col gap-2 px-4 py-3">
-                            {bullets.map((bullet, j) => {
-                              const rkey = `exp-${i}-${j}`;
-                              if (typeof bullet === 'string') {
-                                const text = editValues[rkey] ?? bullet;
-                                const status = reviews[rkey] || null;
-                                if (editMode[rkey]) {
-                                  return (
-                                    <div key={j} className="flex flex-col gap-1.5">
-                                      <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                        className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors" rows={3} />
-                                      <button onClick={() => saveEdit(rkey)}
-                                        className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                        <Check size={11} strokeWidth={2.5} /> Save
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div key={j} className={`group flex items-start gap-2.5 px-4 py-2.5 rounded-xl border transition-colors ${
-                                    status === 'accepted' ? 'border-green-200 bg-green-50/40' : 'border-gray-100 bg-gray-50/30'
-                                  }`}>
-                                    <span className="mt-2 w-1 h-1 rounded-full bg-gray-300 shrink-0" />
-                                    <p className="text-sm text-gray-800 leading-relaxed flex-1">{text}</p>
-                                    <button onClick={() => openEdit(rkey, text)}
-                                      className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer border border-gray-200 rounded-md px-1.5 py-0.5 shrink-0 bg-white">
-                                      <Pencil size={10} strokeWidth={2} />
-                                    </button>
-                                  </div>
-                                );
-                              }
-                              const orig     = bullet.original_text ?? '';
-                              const tailored = bullet.tailored_text  ?? '';
-                              const isNew    = !!bullet.is_new_suggestion;
-                              const status   = getReview(rkey);
-                              if (editMode[rkey]) {
-                                return (
-                                  <div key={j} className="flex flex-col gap-1.5">
-                                    <textarea value={editValues[rkey] ?? tailored} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                      className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors" rows={3} />
-                                    <button onClick={() => saveEdit(rkey)}
-                                      className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                      <Check size={11} strokeWidth={2.5} /> Save
-                                    </button>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div key={j} className="group relative">
-                                  <ReviewCard status={status}
-                                    onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
-                                    onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}>
-                                    {isNew ? (
-                                      <div className="flex flex-col gap-1.5">
-                                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5 w-fit">
-                                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                                          AI Suggestion
-                                        </span>
-                                        <p className="text-sm text-gray-800 leading-relaxed">{editValues[rkey] !== undefined ? editValues[rkey] : tailored}</p>
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-gray-800 leading-relaxed">
-                                        {editValues[rkey] !== undefined ? editValues[rkey]
-                                          : status === 'cancelled' ? orig
-                                          : <DiffText original={orig} tailored={tailored} />}
-                                      </p>
-                                    )}
-                                  </ReviewCard>
-                                  <button onClick={() => openEdit(rkey, editValues[rkey] ?? tailored)}
-                                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer bg-white border border-gray-200 rounded-md px-1.5 py-0.5">
-                                    <Pencil size={10} strokeWidth={2} />
-                                  </button>
+                  <section ref={el => { sectionRefs.current['projects'] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <h3 style={SECTION_HEAD}>Projects</h3>
+                    {(data.tailored_projects || []).length === 0 && emptySection('No project sections returned by AI.')}
+                    {(data.tailored_projects || []).map((proj, i) => (
+                      <div key={i}>
+                        <h4 style={{ fontFamily: 'Inter', fontSize: 13, fontWeight: 700, color: 'var(--sumi)', marginBottom: 10, marginTop: 0 }}>{proj.name}</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {(proj.bullets || []).map((bullet, j) => {
+                            const rkey = `proj-${i}-${j}`;
+                            if (typeof bullet === 'string') {
+                              const text   = editValues[rkey] ?? bullet;
+                              const status = reviews[rkey] || null;
+                              if (editMode[rkey]) return (
+                                <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                  {saveBtn(() => saveEdit(rkey))}
                                 </div>
                               );
-                            })}
+                              return <div key={j}>{bulletRow(rkey, text, status, '')}</div>;
+                            }
+                            const orig    = bullet.original_text ?? '';
+                            const tailored = bullet.tailored_text ?? '';
+                            const isNew   = !!bullet.is_new_suggestion;
+                            const status  = getReview(rkey);
+                            if (editMode[rkey]) return (
+                              <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <textarea value={editValues[rkey] ?? tailored} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
+                                {saveBtn(() => saveEdit(rkey))}
+                              </div>
+                            );
+                            const { added: aw, removed: rw } = computeDiffCounts(orig, tailored);
+                            return (
+                              <div key={j} style={{ position: 'relative' }}>
+                                <ReviewCard status={status}
+                                  onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
+                                  onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}
+                                  addedCount={isNew ? 0 : aw} removedCount={isNew ? 0 : rw}>
+                                  {isNew ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', fontFamily: '"JetBrains Mono",monospace', fontSize: 9, letterSpacing: '0.2em', fontWeight: 700, color: 'var(--moss-deep)', background: 'rgba(90,122,78,0.08)', border: '1px solid var(--moss-soft)', borderRadius: 2, padding: '4px 8px' }}>AI Suggestion</span>
+                                      <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0 }}>{editValues[rkey] !== undefined ? editValues[rkey] : tailored}</p>
+                                    </div>
+                                  ) : (
+                                    <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0 }}>
+                                      {editValues[rkey] !== undefined ? editValues[rkey]
+                                        : status === 'cancelled' ? orig
+                                        : <DiffText original={orig} tailored={tailored} />}
+                                    </p>
+                                  )}
+                                </ReviewCard>
+                                <div style={{ position: 'absolute', top: 12, right: 12 }}>
+                                  {editBtn(() => openEdit(rkey, editValues[rkey] ?? tailored))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* FOOTER */}
+          <footer style={{ padding: '16px 28px', borderTop: '1px solid var(--rule)', background: 'var(--washi-deep)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <span className="tm-mincho" style={{ fontSize: 18, fontWeight: 700, color: 'var(--sumi)' }}>
+                {reviewedCount}<span style={{ color: 'var(--sumi-mute)' }}>/{totalItems}</span>
+              </span>
+              <span className="tm-mono" style={{ fontSize: 10, letterSpacing: '0.22em', color: 'var(--sumi-mute)', textTransform: 'uppercase' }}>Reviewed</span>
+              <div style={{ width: 160, height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                <motion.div
+                  style={{ height: '100%', background: 'var(--moss)' }}
+                  animate={{ width: `${progressPct}%` }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 30 }}
+                />
+              </div>
+            </div>
+            <button onClick={handleCommit} disabled={committing} aria-label="Commit tailoring" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 2, background: 'var(--moss)', color: 'var(--paper)', border: 'none', fontFamily: 'Inter', fontSize: 13, fontWeight: 600, cursor: committing ? 'wait' : 'pointer', boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)', opacity: committing ? 0.6 : 1 }}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M3 2 H11 L13 4 V13 H3 Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                <path d="M5 2 V6 H10 V2" stroke="currentColor" strokeWidth="1.4"/>
+              </svg>
+              {committing ? 'Saving…' : 'Commit tailoring'}
+            </button>
+          </footer>
+
+        </motion.div>
+      </motion.div>
+
+      {/* Hidden PDF target */}
+      <div className="sr-only">
+        <div ref={pdfRef} style={{ fontFamily: 'Georgia, serif', fontSize: '13px', color: '#111', lineHeight: 1.6 }}>
+          {isV3 ? (
+            Object.entries(data)
+              .filter(([k]) => k !== '_version')
+              .map(([title, content]) => {
+                if (typeof content === 'string') {
+                  const eKey = `s:${title}`;
+                  return (
+                    <div key={title} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>{title}</div>
+                      <p style={{ margin: 0 }}>{editValues[eKey] ?? content}</p>
+                    </div>
+                  );
+                }
+                if (Array.isArray(content)) {
+                  if (!content.length || typeof content[0] === 'string') {
+                    return (
+                      <div key={title} style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>{title}</div>
+                        <p style={{ margin: 0 }}>{content.join(' · ')}</p>
+                      </div>
+                    );
+                  }
+                  if (content[0]?.bullets !== undefined) {
+                    return (
+                      <div key={title} style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 10, fontFamily: 'Arial, sans-serif' }}>{title}</div>
+                        {content.map((entry, ei) => (
+                          <div key={ei} style={{ marginBottom: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                              <span style={{ fontWeight: 'bold', fontFamily: 'Arial, sans-serif' }}>{entry.title}{entry.company ? ` · ${entry.company}` : ''}</span>
+                              {entry.period && <span style={{ fontSize: 11, color: '#888', fontFamily: 'Arial, sans-serif' }}>{entry.period}</span>}
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 18 }}>
+                              {(entry.bullets || []).map((b, bi) => {
+                                const rkey = `${title}-${ei}-${bi}`;
+                                return <li key={bi} style={{ marginBottom: 4 }}>{editValues[rkey] ?? b}</li>;
+                              })}
+                            </ul>
                           </div>
-                        )}
+                        ))}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={title} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 10, fontFamily: 'Arial, sans-serif' }}>{title}</div>
+                      {content.map((proj, pi) => {
+                        const rkey = `${title}-${pi}-d`;
+                        return (
+                          <div key={pi} style={{ marginBottom: 12 }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: 4, fontFamily: 'Arial, sans-serif' }}>{proj.name}</div>
+                            <p style={{ margin: 0 }}>{editValues[rkey] ?? proj.description}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                return null;
+              })
+          ) : (
+            <>
+              {(data.skills || []).length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>Skills</div>
+                  <p style={{ margin: 0 }}>{data.skills.join(' · ')}</p>
+                </div>
+              )}
+              {finalSummary && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>Summary</div>
+                  <p style={{ margin: 0 }}>{finalSummary}</p>
+                </div>
+              )}
+              {(data.tailored_experience || []).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 10, fontFamily: 'Arial, sans-serif' }}>Experience</div>
+                  {(data.tailored_experience || []).map((exp, i) => {
+                    const finalBullets = (exp.bullets || []).map((b, j) => getFinalBullet(b, i, j, 'exp')).filter(Boolean);
+                    return (
+                      <div key={i} style={{ marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontWeight: 'bold', fontFamily: 'Arial, sans-serif' }}>{exp.title}{exp.company ? ` · ${exp.company}` : ''}</span>
+                          {exp.period && <span style={{ fontSize: 11, color: '#888', fontFamily: 'Arial, sans-serif' }}>{exp.period}</span>}
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {finalBullets.map((text, k) => <li key={k} style={{ marginBottom: 4 }}>{text}</li>)}
+                        </ul>
                       </div>
                     );
                   })}
                 </div>
-
-                {/* Projects */}
-                <div ref={el => { sectionRefs.current['projects'] = el; }} className="flex flex-col gap-4">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Projects</p>
-                  {(data.tailored_projects || []).length === 0 && (
-                    <p className="text-xs text-gray-400 italic">No project sections returned by AI.</p>
-                  )}
-                  {(data.tailored_projects || []).map((proj, i) => (
-                    <div key={i}>
-                      <h3 className="text-sm font-bold text-gray-900 mb-3">{proj.name}</h3>
-                      <div className="flex flex-col gap-2">
-                        {(proj.bullets || []).map((bullet, j) => {
-                          const rkey = `proj-${i}-${j}`;
-                          if (typeof bullet === 'string') {
-                            const text = editValues[rkey] ?? bullet;
-                            const status = reviews[rkey] || null;
-                            if (editMode[rkey]) {
-                              return (
-                                <div key={j} className="flex flex-col gap-1.5">
-                                  <textarea value={text} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                    className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors" rows={3} />
-                                  <button onClick={() => saveEdit(rkey)}
-                                    className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                    <Check size={11} strokeWidth={2.5} /> Save
-                                  </button>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div key={j} className={`group flex items-start gap-2.5 px-4 py-2.5 rounded-xl border transition-colors ${
-                                status === 'accepted' ? 'border-green-200 bg-green-50/40' : 'border-gray-100 bg-gray-50/30'
-                              }`}>
-                                <p className="text-sm text-gray-800 leading-relaxed flex-1">{text}</p>
-                                <button onClick={() => openEdit(rkey, text)}
-                                  className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer border border-gray-200 rounded-md px-1.5 py-0.5 shrink-0 bg-white">
-                                  <Pencil size={10} strokeWidth={2} />
-                                </button>
-                              </div>
-                            );
-                          }
-                          const orig    = bullet.original_text ?? '';
-                          const tailored = bullet.tailored_text ?? '';
-                          const isNew   = !!bullet.is_new_suggestion;
-                          const status  = getReview(rkey);
-                          if (editMode[rkey]) {
-                            return (
-                              <div key={j} className="flex flex-col gap-1.5">
-                                <textarea value={editValues[rkey] ?? tailored} onChange={(e) => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))}
-                                  className="w-full text-sm text-gray-800 leading-relaxed border border-gray-200 rounded-xl p-3.5 resize-none focus:outline-none focus:border-green-400 transition-colors" rows={3} />
-                                <button onClick={() => saveEdit(rkey)}
-                                  className="self-end flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium cursor-pointer">
-                                  <Check size={11} strokeWidth={2.5} /> Save
-                                </button>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={j} className="group relative">
-                              <ReviewCard status={status}
-                                onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
-                                onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}>
-                                {isNew ? (
-                                  <div className="flex flex-col gap-1.5">
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5 w-fit">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                                      AI Suggestion
-                                    </span>
-                                    <p className="text-sm text-gray-800 leading-relaxed">{editValues[rkey] !== undefined ? editValues[rkey] : tailored}</p>
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-gray-800 leading-relaxed">
-                                    {editValues[rkey] !== undefined ? editValues[rkey]
-                                      : status === 'cancelled' ? orig
-                                      : <DiffText original={orig} tailored={tailored} />}
-                                  </p>
-                                )}
-                              </ReviewCard>
-                              <button onClick={() => openEdit(rkey, editValues[rkey] ?? tailored)}
-                                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-all cursor-pointer bg-white border border-gray-200 rounded-md px-1.5 py-0.5">
-                                <Pencil size={10} strokeWidth={2} />
-                              </button>
-                            </div>
-                          );
-                        })}
+              )}
+              {(data.tailored_projects || []).length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: 10, fontFamily: 'Arial, sans-serif' }}>Projects</div>
+                  {(data.tailored_projects || []).map((proj, i) => {
+                    const finalBullets = (proj.bullets || []).map((b, j) => getFinalBullet(b, i, j, 'proj')).filter(Boolean);
+                    return (
+                      <div key={i} style={{ marginBottom: 16 }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: 6, fontFamily: 'Arial, sans-serif' }}>{proj.name}</div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {finalBullets.map((text, k) => <li key={k} style={{ marginBottom: 4 }}>{text}</li>)}
+                        </ul>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              </>
-            )}
-          </div>
+              )}
+            </>
+          )}
         </div>
-
-        {/* Sticky footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 shrink-0 bg-white z-10">
-          <span className="text-xs text-gray-400">
-            <span className="font-semibold text-gray-700">{reviewedCount}</span>/{totalItems} reviewed
-          </span>
-          <button
-            onClick={handleCommit}
-            disabled={committing}
-            aria-label="Commit tailoring"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-700 active:bg-green-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save size={14} strokeWidth={2} />
-            {committing ? 'Saving…' : 'Commit Tailoring'}
-          </button>
-        </div>
-
-        {/* Hidden clean PDF target */}
-        <div className="sr-only">
-          <div ref={pdfRef} style={{ fontFamily: 'Georgia, serif', fontSize: '13px', color: '#111', lineHeight: 1.6 }}>
-            {isV3 ? (
-              Object.entries(data)
-                .filter(([k]) => k !== '_version')
-                .map(([title, content]) => {
-                  if (typeof content === 'string') {
-                    const eKey = `s:${title}`;
-                    return (
-                      <div key={title} style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '6px', fontFamily: 'Arial, sans-serif' }}>{title}</div>
-                        <p style={{ margin: 0 }}>{editValues[eKey] ?? content}</p>
-                      </div>
-                    );
-                  }
-                  if (Array.isArray(content)) {
-                    if (!content.length || typeof content[0] === 'string') {
-                      return (
-                        <div key={title} style={{ marginBottom: '16px' }}>
-                          <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '6px', fontFamily: 'Arial, sans-serif' }}>{title}</div>
-                          <p style={{ margin: 0 }}>{content.join(' · ')}</p>
-                        </div>
-                      );
-                    }
-                    if (content[0]?.bullets !== undefined) {
-                      return (
-                        <div key={title} style={{ marginBottom: '16px' }}>
-                          <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' }}>{title}</div>
-                          {content.map((entry, ei) => (
-                            <div key={ei} style={{ marginBottom: '16px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                <span style={{ fontWeight: 'bold', fontFamily: 'Arial, sans-serif' }}>{entry.title}{entry.company ? ` · ${entry.company}` : ''}</span>
-                                {entry.period && <span style={{ fontSize: '11px', color: '#888', fontFamily: 'Arial, sans-serif' }}>{entry.period}</span>}
-                              </div>
-                              <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                                {(entry.bullets || []).map((b, bi) => {
-                                  const rkey = `${title}-${ei}-${bi}`;
-                                  return <li key={bi} style={{ marginBottom: '4px' }}>{editValues[rkey] ?? b}</li>;
-                                })}
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={title} style={{ marginBottom: '16px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' }}>{title}</div>
-                        {content.map((proj, pi) => {
-                          const rkey = `${title}-${pi}-d`;
-                          return (
-                            <div key={pi} style={{ marginBottom: '12px' }}>
-                              <div style={{ fontWeight: 'bold', marginBottom: '4px', fontFamily: 'Arial, sans-serif' }}>{proj.name}</div>
-                              <p style={{ margin: 0 }}>{editValues[rkey] ?? proj.description}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  }
-                  return null;
-                })
-            ) : (
-              <>
-                {(data.skills || []).length > 0 && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '6px', fontFamily: 'Arial, sans-serif' }}>Skills</div>
-                    <p style={{ margin: 0 }}>{data.skills.join(' · ')}</p>
-                  </div>
-                )}
-                {finalSummary && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '6px', fontFamily: 'Arial, sans-serif' }}>Summary</div>
-                    <p style={{ margin: 0 }}>{finalSummary}</p>
-                  </div>
-                )}
-                {(data.tailored_experience || []).length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' }}>Experience</div>
-                    {(data.tailored_experience || []).map((exp, i) => {
-                      const finalBullets = (exp.bullets || []).map((b, j) => getFinalBullet(b, i, j, 'exp')).filter(Boolean);
-                      return (
-                        <div key={i} style={{ marginBottom: '16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ fontWeight: 'bold', fontFamily: 'Arial, sans-serif' }}>{exp.title}{exp.company ? ` · ${exp.company}` : ''}</span>
-                            {exp.period && <span style={{ fontSize: '11px', color: '#888', fontFamily: 'Arial, sans-serif' }}>{exp.period}</span>}
-                          </div>
-                          <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                            {finalBullets.map((text, k) => <li key={k} style={{ marginBottom: '4px' }}>{text}</li>)}
-                          </ul>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {(data.tailored_projects || []).length > 0 && (
-                  <div style={{ marginTop: '16px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' }}>Projects</div>
-                    {(data.tailored_projects || []).map((proj, i) => {
-                      const finalBullets = (proj.bullets || []).map((b, j) => getFinalBullet(b, i, j, 'proj')).filter(Boolean);
-                      return (
-                        <div key={i} style={{ marginBottom: '16px' }}>
-                          <div style={{ fontWeight: 'bold', marginBottom: '6px', fontFamily: 'Arial, sans-serif' }}>{proj.name}</div>
-                          <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                            {finalBullets.map((text, k) => <li key={k} style={{ marginBottom: '4px' }}>{text}</li>)}
-                          </ul>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
       </div>
 
       {toast && (
-        <div role="status"
-          className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium ${
-            toast === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
-          }`}>
+        <div role="status" style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 60, display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 3, border: `1px solid ${toast === 'success' ? 'var(--moss-soft)' : 'var(--shu-soft)'}`, background: toast === 'success' ? 'rgba(90,122,78,0.08)' : 'rgba(168,94,62,0.08)', color: toast === 'success' ? 'var(--moss-deep)' : 'var(--shu-deep)', fontFamily: 'Inter', fontSize: 13, fontWeight: 500 }}>
           {toast === 'success' ? (
-            <><svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Application saved successfully</>
+            <><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8 L6 11 L13 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>Application saved successfully</>
           ) : (
-            toastMessage || 'Save failed — please try again'
+            toastMsg || 'Save failed — please try again'
           )}
         </div>
       )}
