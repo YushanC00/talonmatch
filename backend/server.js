@@ -4,11 +4,10 @@ const multer = require('multer');
 // Use internal path to skip pdf-parse's test-file side-effect on require
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 const cors = require('cors');
-const { parseResume } = require('./resumeParser');
 const { parseResumeAI } = require('./resumeParserAI');
 const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
-const { tailorResume } = require('./tailorResume');
+const { streamTailorResume } = require('./tailorResume');
 const { clearCache } = require('./jobFetcher');
 
 const app = express();
@@ -78,7 +77,7 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  const { location, results_per_page } = req.query;
+  const { results_per_page } = req.query;
 
   try {
     // Parse resume first — job search query derives from it
@@ -152,20 +151,60 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
 app.post('/api/tailor-resume', async (req, res) => {
   const { parsed_resume, job_description } = req.body;
 
-  if (!parsed_resume || !job_description) {
-    return res.status(400).json({ error: 'parsed_resume and job_description required' });
-  }
+  console.log('[tailor] req | exp:', parsed_resume?.experience?.length ?? 0, '| proj:', parsed_resume?.projects?.length ?? 0, '| skills:', parsed_resume?.skills?.length ?? 0);
 
-  if (!process.env.GROQ_API_KEY) {
+  if (!parsed_resume || !job_description)
+    return res.status(400).json({ error: 'parsed_resume and job_description required' });
+  if (!Array.isArray(parsed_resume.experience) || parsed_resume.experience.length === 0)
+    return res.status(400).json({ error: 'parsed_resume.experience is missing or empty — cannot tailor without work history' });
+  if (!process.env.GROQ_API_KEY)
     return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
-  }
+
+  const t_route = Date.now();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  res.socket?.setNoDelay(true);
+  res.write(': ping\n\n');
+
+  // Keepalive every 200ms — forces the Vite http-proxy to flush buffered chunks
+  // to the browser rather than waiting for a large batch. SSE comments are
+  // silently ignored by the frontend parser.
+  const keepalive = setInterval(() => {
+    if (!res.writableEnded) res.write(': keepalive\n\n');
+  }, 200);
+
+  const ac = new AbortController();
+  req.on('close', () => {
+    console.log(`[tailor] client disconnected +${Date.now() - t_route}ms`);
+    clearInterval(keepalive);
+    ac.abort();
+  });
 
   try {
-    const result = await tailorResume({ parsedResume: parsed_resume, jobDescription: job_description });
-    res.json(result);
+    for await (const event of streamTailorResume({
+      parsedResume:   parsed_resume,
+      jobDescription: job_description,
+      signal:         ac.signal,
+    })) {
+      if (res.writableEnded || ac.signal.aborted) break;
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (typeof res.flush === 'function') res.flush();
+    }
   } catch (err) {
-    console.error('AI API ERROR:', err);
-    res.status(500).json({ error: 'Tailoring failed', details: err.message });
+    const isAbort = err.name === 'AbortError' || err.message?.toLowerCase().includes('aborted');
+    if (isAbort) {
+      console.log('[tailor] stream aborted (client gone)');
+    } else {
+      console.error('[tailor] stream error:', err.message);
+      if (!res.writableEnded)
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+    }
+  } finally {
+    clearInterval(keepalive);
+    if (!res.writableEnded) res.end();
   }
 });
 
@@ -189,5 +228,9 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+
+module.exports = { app };

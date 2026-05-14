@@ -28,7 +28,7 @@ const SKILL_VOCAB = [
 
 const DATE_PATTERN = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}|\b(19|20)\d{2}\b/i;
 const SECTION_HEADERS = /^(skills|technical skills|core competencies|technologies|tools|expertise|experience|work experience|employment|professional experience|education|academic|qualifications)/i;
-const JOB_TITLE_SEPARATORS = /\s*[\/\|–\-]\s*(?=\w)/;
+const JOB_TITLE_SEPARATORS = /\s*[/|–-]\s*(?=\w)/;
 
 // Strip HTML tags that some PDF extractors leave behind
 function cleanText(text) {
@@ -71,7 +71,7 @@ function extractLocation(lines) {
     const lower = line.toLowerCase();
 
     // "City, Province/State" or "City, Province/State, Country"
-    const commaMatch = line.match(/^([A-Za-z\s\.\-]+),\s*([A-Za-z]{2,}(?:,\s*[A-Za-z\s]+)?)$/);
+    const commaMatch = line.match(/^([A-Za-z\s.-]+),\s*([A-Za-z]{2,}(?:,\s*[A-Za-z\s]+)?)$/);
     if (commaMatch) {
       const parts = commaMatch[0].split(',').map(s => s.trim());
       const region = parts[1]?.toLowerCase().replace(/\.$/, '');
@@ -107,14 +107,14 @@ function parseJobTitle(line) {
   const parts = title.split(JOB_TITLE_SEPARATORS);
   title = parts[0].trim();
   // Drop trailing punctuation
-  return title.replace(/[,\.\|\/–\-]+$/, '').trim();
+  return title.replace(/[,.|/–-]+$/, '').trim();
 }
 
 const JOB_ROLE_KEYWORDS = /\b(manager|director|designer|engineer|developer|analyst|architect|coordinator|specialist|consultant|executive|officer|president|vp|head|principal|lead|strategist|researcher|scientist|producer|founder|cto|ceo|coo|cpo|owner|associate|intern|staff|technician|writer|editor|illustrator|contractor|freelancer|advisor|partner)\b/i;
 // Only reject when suffix is the primary word — require it near end of a short line
 const COMPANY_SUFFIXES  = /\b(inc\.?|ltd\.?|llc\.?|corp\.?|gmbh|plc)\b/i;
 const LOCATION_LINE     = /\b(canada|usa|uk|australia|remote)\b|,\s*(bc|on|ab|qc|ca|ny|wa|tx)\b/i;
-const BULLET_LINE       = /^[•●▪–—●•\-\*]\s*/;
+const BULLET_LINE       = /^[-•●▪–—●•*]\s*/;
 // Catch action-verb sentences — "Led a team", "Lead a cross-functional..." but NOT "Tech Lead"
 const SENTENCE_STARTERS = /^(led|managed|built|designed|developed|worked|created|drove|owned|improved|launched|partnered|oversaw|delivered|implemented|maintained|increased|reduced|lead\s+a|lead\s+the|lead\s+cross|lead\s+multiple)/i;
 
@@ -152,7 +152,7 @@ function extractExperience(lines) {
   }
   if (current) entries.push(current);
 
-  return entries.map(({ raw_header, title, description }) => ({ title, description }));
+  return entries.map(({ title, description }) => ({ title, description }));
 }
 
 function extractEducation(lines) {
@@ -166,7 +166,7 @@ function extractEducation(lines) {
     if (isDegree || isInstitution) {
       if (current) entries.push(current);
       const yearMatch = line.match(/\b(19|20)\d{2}\b/);
-      const degreeMatch = line.match(/\b(bachelor[^\,\.]*|master[^\,\.]*|phd[^\,\.]*|b\.?s\.?[^\,\.\ ]*|m\.?s\.?[^\,\.\ ]*|mba[^\,\.]*)/i);
+      const degreeMatch = line.match(/\b(bachelor[^,.]*|master[^,.]*|phd[^,.]*|b\.?s\.?[^,. ]*|m\.?s\.?[^,. ]*|mba[^,.]*)/i);
       current = {
         institution: line,
         degree: degreeMatch?.[0]?.trim() || '',
@@ -218,7 +218,6 @@ function parseResume(rawText) {
 
   const most_recent_job_title = all_job_titles[0] || '';
 
-  const skillSet = new Set(vocabSkills.map(s => s.toLowerCase()));
   const skills = vocabSkills;
 
   const location = extractLocation(lines);
@@ -236,4 +235,11 @@ function parseResume(rawText) {
   };
 }
 
-module.exports = { parseResume };
+module.exports = {
+  parseResume,
+  // internal helpers — exported for unit testing
+  cleanText, splitLines, extractVocabSkills,
+  extractLocation, splitLocation,
+  parseJobTitle, looksLikeJobTitle,
+  extractExperience, extractEducation,
+};

@@ -2,8 +2,8 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-const CACHE_DIR = path.join(__dirname, "cache");
-const MOCK_FILE = path.join(CACHE_DIR, "mock.json");
+let CACHE_DIR = path.join(__dirname, "cache");
+const MOCK_FILE = path.join(__dirname, "cache", "mock.json");
 
 function slugify(str) {
   return str
@@ -44,7 +44,7 @@ function getMockData() {
   if (fs.existsSync(MOCK_FILE)) {
     try {
       return JSON.parse(fs.readFileSync(MOCK_FILE, "utf8"));
-    } catch {}
+    } catch { /* noop — fall through to inline mock */ }
   }
   // Inline fallback if mock.json absent
   return [
@@ -187,7 +187,7 @@ function transformJSearchJob(job) {
 
 function sanitizeTitle(t) {
   return t
-    .replace(/^[•●▪–—\-\*\s]+/, "") // strip leading bullets/dashes
+    .replace(/^[-•●▪–—*\s]+/, "") // strip leading bullets/dashes
     .replace(/[•●▪()[\]{}]/g, "") // strip special chars anywhere
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -262,7 +262,7 @@ async function fetchOneTitle({
   try {
     parsed = JSON.parse(body);
   } catch (e) {
-    throw new Error(`JSearch parse error: ${e.message}`);
+    throw new Error(`JSearch parse error: ${e.message}`, { cause: e });
   }
 
   if (status !== 200) {
@@ -418,7 +418,7 @@ async function fetchFromRemotive({ title, userLocation, resultsPerPage = 40 }) {
   try {
     parsed = JSON.parse(body);
   } catch (e) {
-    throw new Error(`Remotive parse error: ${e.message}`);
+    throw new Error(`Remotive parse error: ${e.message}`, { cause: e });
   }
 
   const all = (parsed.jobs || []).map(transformRemotiveJob);
@@ -461,9 +461,19 @@ function clearCache() {
   if (!fs.existsSync(CACHE_DIR)) return 0;
   const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
   files.forEach(f => {
-    try { fs.unlinkSync(path.join(CACHE_DIR, f)); } catch {}
+    try { fs.unlinkSync(path.join(CACHE_DIR, f)); } catch { /* noop — file may already be gone */ }
   });
   return files.length;
 }
 
-module.exports = { fetchJobs, clearCache };
+module.exports = {
+  fetchJobs, clearCache, fetchFromJSearch, fetchFromRemotive,
+  // pure helpers — exported for unit testing
+  slugify, sanitizeTitle, buildSingleQuery,
+  deduplicateJobs, extractRequirements,
+  formatPayRange, isCompatibleWithLocation,
+  transformJSearchJob, transformRemotiveJob,
+  getMockData,
+  cacheGet, cacheSet,
+  _setCacheDirForTesting: (dir) => { CACHE_DIR = dir; },
+};

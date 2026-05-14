@@ -2,127 +2,126 @@ const Groq = require('groq-sdk');
 
 let _client = null;
 function getClient() {
-  if (!_client) _client = new Groq({ apiKey: process.env.GROQ_API_KEY, timeout: 30_000 });
+  if (!_client) _client = new Groq({ apiKey: process.env.GROQ_API_KEY, timeout: 60_000 });
   return _client;
 }
 
-async function groqJSON(systemPrompt, userMessage) {
-  const completion = await getClient().chat.completions.create({
-    model: 'llama-3.1-8b-instant',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    max_tokens: 3000,
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  });
-  const raw = completion.choices[0]?.message?.content?.trim();
-  if (!raw) throw new Error('Empty response from Groq');
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`Groq returned invalid JSON: ${raw.slice(0, 200)}`);
+
+// ── System prompt ──────────────────────────────────────────────────────────────
+
+const DYNAMIC_SYSTEM = `ATS resume writer. Tailor candidate resume to JD. Return JSON only — no prose.
+
+INTEGRITY (non-negotiable):
+• Never invent metrics, dates, skills, or companies not in source text
+• If JD requires more experience than candidate has: qualitative framing, never fabricate years
+• Copy bullet verbatim into tailored if no meaningful improvement fits
+• Match seniority — never upgrade title tier (junior stays junior)
+• No buzzwords: leverage, spearheaded, synergy, cutting-edge, passionate, results-driven
+
+CONTENT:
+• Bullets: Action Verb + Result, max 200 chars. Quantify only if metric exists in original
+• ALL experience bullets must appear — omitting any is a critical failure
+• Skills hard: top 10 from candidate's list by JD relevance. No invented skills
+• Skills soft: max 5, only when evidenced in experience text
+• Plain text — no markdown, no Unicode
+
+IDs: summary-0 | we-{co_slug}-{N} | proj-{slug}-0 | skills-hard-0 / skills-soft-0 | edu-{N}
+Work Experience label = "Role @ Company (Period)" on every item.
+
+Each section gets ONE rationale field (max 12 words explaining JD alignment).
+Output Summary section FIRST so the frontend can render immediately.
+Include ONLY sections present in the source resume.
+
+OUTPUT FORMAT:
+{"_version":4,"sections":[{"title":"Summary","rationale":"<12w>","content":[{"id":"summary-0","label":"","original":"...","tailored":"..."}]},{"title":"Work Experience","rationale":"<12w>","content":[{"id":"we-acme-0","label":"Sr Engineer @ Acme (2021–Now)","original":"Built API...","tailored":"Designed high-throughput API..."}]},{"title":"Skills","rationale":"<12w>","content":[{"id":"skills-hard-0","label":"Technical","original":"React, TS...","tailored":"React, TS..."},{"id":"skills-soft-0","label":"Soft","original":"","tailored":"Communication, Collaboration"}]}]}`;
+
+// ── JD context stripping ───────────────────────────────────────────────────────
+
+const JD_NOISE_PATTERNS = [
+  /\b(?:about us|about the company|who we are|our story|our mission|company overview)\b[\s\S]*?(?=\n{2,}|\b(?:responsibilities|requirements|qualifications|what you.ll do|the role)\b|$)/gi,
+  /\b(?:benefits?|perks?|what we offer|compensation|salary|equity|stock|401k|health insurance|dental|vision|pto|paid time off|parental leave|remote work policy)\b[\s\S]*?(?=\n{2,}|\b(?:responsibilities|requirements|qualifications)\b|$)/gi,
+  /\b(?:equal employment opportunity|eeo|diversity|inclusion|we celebrate|we do not discriminate|criminal history|fair chance|background check|background screening)\b[\s\S]*$/gi,
+  /\bwe may use artificial intelligence[\s\S]*$/gi,
+];
+
+function stripJdNoise(jd) {
+  let cleaned = jd;
+  for (const re of JD_NOISE_PATTERNS) {
+    cleaned = cleaned.replace(re, '');
   }
+  // Collapse 3+ blank lines into 2, trim
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// ── Dynamic section prompt (v4) ────────────────────────────────────────────────
+// ── Build user message ─────────────────────────────────────────────────────────
 
-const DYNAMIC_SYSTEM = `You are a professional resume writer with expertise in ATS optimization and achievement-oriented copywriting.
+function slugify(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
+}
 
-TONE: "Professional & Achiever" — confident, results-driven, no filler words.
-
-BULLET FORMULA: Action Verb + Task + Result. Front-load impact.
-Good: "Reduced onboarding time by redesigning the intake workflow, cutting support tickets by half."
-Bad: "Responsible for managing the onboarding process and supporting new users."
-
-NUMERICAL INTEGRITY (NON-NEGOTIABLE):
-- NEVER change, inflate, or fabricate years of experience, graduation dates, or employment timelines
-- NEVER invent metrics (%, $, #, multipliers) not present in the candidate's original resume bullets
-- If JD asks for "7 years" but candidate has "5 years," use qualitative framing instead
-- Any years figure in Summary MUST derive from provided employment dates, never from the JD
-
-ATS RULES:
-- Max 2 JD keywords per bullet — weave them naturally, do NOT keyword-stuff
-- Plain text only, no special Unicode characters or symbols
-
-RULES:
-1. NEVER invent skills, titles, companies, dates, or accomplishments not in the input
-2. ONLY reframe existing facts using JD vocabulary — no fabrication
-3. NO AI buzzwords: leverage, spearheaded, synergy, cutting-edge, transformative, revolutionize, etc.
-4. Skills: pick up to 10 from the candidate's actual skills list, ordered by JD relevance
-5. Summary: 2-3 sentences, no first-person pronoun
-6. Work Experience: 3-5 bullets per entry. ALWAYS include every job. NEVER return empty array. Each bullet max 200 characters.
-7. Projects: one concise description sentence per project using JD vocabulary.
-8. De-duplicate: if same company appears multiple times in input, merge into ONE entry with the best bullets.
-
-Return ONLY valid JSON — no markdown fences, no extra keys:
-{
-  "_version": 3,
-  "Summary": "<tailored 2-3 sentence summary>",
-  "Work Experience": [
-    {
-      "title": "<job title>",
-      "company": "<company name>",
-      "period": "<date range or empty string>",
-      "bullets": ["<bullet>", "<bullet>", "<bullet>"]
-    }
-  ],
-  "Projects": [
-    {
-      "name": "<project name>",
-      "description": "<1 sentence description>"
-    }
-  ],
-  "Skills": ["<skill>", "<skill>"]
-}`;
-
-// ── Build user message from resume data ────────────────────────────────────────
-
-function getBullets(job) {
-  if (Array.isArray(job.bullets) && job.bullets.length > 0) return job.bullets.slice(0, 6);
-  if (!job.description) return [];
-  return job.description.split(/[.!?]\s+/).filter(s => s.trim().length > 10).slice(0, 6);
+function splitDescription(description) {
+  if (!description) return [];
+  return description
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 10);
 }
 
 function buildUserMessage({ parsedResume, jobDescription }) {
-  const skills = parsedResume.skills || [];
+  const lines = [];
+  const cleanedJd = stripJdNoise(jobDescription).slice(0, 1800);
+  lines.push(`JOB DESCRIPTION:\n${cleanedJd}\n`);
+  lines.push('CANDIDATE RESUME:');
+
+  if (parsedResume.summary) {
+    lines.push('\n=== Summary ===');
+    lines.push(parsedResume.summary);
+  }
+
   const experience = parsedResume.experience || [];
+  if (experience.length > 0) {
+    lines.push('\n=== Work Experience ===');
+    for (const job of experience) {
+      const slug = slugify(job.company);
+      lines.push(`\n[Company: ${job.company} | Role: ${job.title} | Period: ${job.period} | id_prefix: we-${slug}]`);
+      const bullets = Array.isArray(job.bullets) && job.bullets.length > 0
+        ? job.bullets.slice(0, 6)
+        : splitDescription(job.description).slice(0, 6);
+      if (bullets.length === 0) {
+        lines.push('Bullet 0: (no bullets provided)');
+      } else {
+        bullets.forEach((b, i) => lines.push(`Bullet ${i}: ${b}`));
+      }
+    }
+  }
+
   const projects = parsedResume.projects || [];
+  if (projects.length > 0) {
+    lines.push('\n=== Projects ===');
+    for (const proj of projects) {
+      lines.push(`\n${proj.name}: ${proj.description}`);
+    }
+  }
 
-  const expLines = experience.map(job => {
-    const bullets = getBullets(job);
-    return `Role: ${job.title || ''}
-Company: ${job.company || ''}
-Period: ${job.period || ''}
-Bullets:
-${bullets.map(b => `- ${b}`).join('\n') || '(none)'}`;
-  }).join('\n---\n');
+  const skills = parsedResume.skills || [];
+  if (skills.length > 0) {
+    lines.push('\n=== Skills ===');
+    lines.push(skills.join(', '));
+  }
 
-  const projLines = projects.map(proj => {
-    const bullets = proj.description
-      ? proj.description.split(/[.!?]\s+/).filter(s => s.trim().length > 10).slice(0, 4)
-      : [];
-    return `Name: ${proj.name || ''}
-Description:
-${bullets.map(b => `- ${b}`).join('\n') || '(none)'}`;
-  }).join('\n---\n');
+  const education = parsedResume.education || [];
+  if (education.length > 0) {
+    lines.push('\n=== Education ===');
+    for (const edu of education) {
+      lines.push(`${edu.degree || ''} — ${edu.institution || ''} (${edu.year || ''})`);
+    }
+  }
 
-  return `JOB DESCRIPTION:
-${jobDescription.slice(0, 2500)}
-
-CANDIDATE SKILLS: ${skills.join(', ')}
-
-EXPERIENCE:
-${expLines || '(none)'}
-
-PROJECTS:
-${projLines || '(none)'}`;
+  return lines.join('\n');
 }
 
 // ── Post-processing helpers ────────────────────────────────────────────────────
 
-// Extracts numeric metrics: 40%, $1M, #5, 10x, 1,000
 function extractMetrics(text) {
   const patterns = [
     /\d+%/g,
@@ -147,16 +146,14 @@ function getRawResumeText(parsedResume) {
   }
   for (const proj of (parsedResume.projects || [])) {
     if (proj.description) parts.push(proj.description);
-    if (Array.isArray(proj.bullets)) parts.push(proj.bullets.join(' '));
   }
   return parts.join(' ');
 }
 
-function stripHallucinatedMetrics(bullet, rawText) {
-  let cleaned = bullet;
-  for (const metric of extractMetrics(bullet)) {
+function stripHallucinatedMetrics(text, rawText) {
+  let cleaned = text;
+  for (const metric of extractMetrics(text)) {
     if (!rawText.includes(metric)) {
-      // Remove the fabricated metric and clean up surrounding punctuation/spaces
       cleaned = cleaned
         .replace(metric, '')
         .replace(/\s{2,}/g, ' ')
@@ -168,7 +165,11 @@ function stripHallucinatedMetrics(bullet, rawText) {
   return cleaned;
 }
 
-// Returns unique JD keywords: capitalized terms and acronyms appearing 2+ times
+function truncateItem(text) {
+  if (text.length <= 200) return text;
+  return text.slice(0, 200).replace(/\s+\S*$/, '').trim();
+}
+
 function extractJdKeywords(jobDescription) {
   const words = jobDescription.match(/\b[A-Z][a-zA-Z]{3,}\b|\b[A-Z]{2,}\b/g) || [];
   const freq = {};
@@ -176,54 +177,17 @@ function extractJdKeywords(jobDescription) {
   return Object.keys(freq).filter(w => freq[w] >= 2 || /^[A-Z]{2,}$/.test(w));
 }
 
-function countJdKeywords(bullet, jdKeywords) {
-  const lower = bullet.toLowerCase();
+function countJdKeywords(text, jdKeywords) {
+  const lower = text.toLowerCase();
   return jdKeywords.filter(kw => lower.includes(kw.toLowerCase())).length;
 }
 
-function truncateBullet(bullet) {
-  // ~2 lines at ~100 chars/line
-  if (bullet.length <= 200) return bullet;
-  return bullet.slice(0, 200).replace(/\s+\S*$/, '').trim();
-}
+// ── Post-process ───────────────────────────────────────────────────────────────
 
-// Merge same-company entries — keep best bullets (up to 5)
-function deduplicateExperience(experience) {
-  const merged = [];
-  for (const entry of experience) {
-    const key = (entry.company || '').toLowerCase().trim();
-    const existing = key ? merged.find(e => (e.company || '').toLowerCase().trim() === key) : null;
-    if (existing) {
-      const combined = [...existing.bullets, ...entry.bullets];
-      // Dedupe bullets by normalized text
-      const seen = new Set();
-      existing.bullets = combined.filter(b => {
-        const norm = b.toLowerCase().replace(/\s+/g, ' ').trim();
-        if (seen.has(norm)) return false;
-        seen.add(norm);
-        return true;
-      }).slice(0, 5);
-      if (!existing.period && entry.period) existing.period = entry.period;
-    } else {
-      merged.push({ ...entry, bullets: [...(entry.bullets || [])] });
-    }
-  }
-  return merged;
-}
-
-function postProcessResult(result, parsedResume) {
-  const rawText = getRawResumeText(parsedResume);
-
-  if (Array.isArray(result['Work Experience'])) {
-    result['Work Experience'] = deduplicateExperience(result['Work Experience']);
-    for (const entry of result['Work Experience']) {
-      entry.bullets = (entry.bullets || [])
-        .map(b => truncateBullet(stripHallucinatedMetrics(b, rawText)))
-        .filter(Boolean);
-    }
-  }
-
-  return result;
+function truncateRationale(text) {
+  if (!text) return '';
+  const words = text.trim().split(/\s+/);
+  return words.length <= 10 ? text.trim() : words.slice(0, 10).join(' ');
 }
 
 // ── Validation scoring ─────────────────────────────────────────────────────────
@@ -232,129 +196,181 @@ function scoreTailoredResult(result, rawText, jdKeywords) {
   let score = 100;
   const issues = [];
 
-  const allBullets = (result['Work Experience'] || []).flatMap(e => e.bullets || []);
-
-  for (const bullet of allBullets) {
-    for (const metric of extractMetrics(bullet)) {
-      if (!rawText.includes(metric)) {
-        score -= 5;
-        issues.push(`hallucinated metric "${metric}" in: ${bullet.slice(0, 60)}`);
+  for (const section of (result.sections || [])) {
+    const isExp = /experience/i.test(section.title);
+    for (const item of (section.content || [])) {
+      for (const metric of extractMetrics(item.tailored)) {
+        if (!rawText.includes(metric)) {
+          score -= 5;
+          issues.push(`hallucinated metric "${metric}" in: ${item.tailored.slice(0, 60)}`);
+        }
+      }
+      if (isExp) {
+        const kwCount = countJdKeywords(item.tailored, jdKeywords);
+        if (kwCount > 2) {
+          score -= 3;
+          issues.push(`${kwCount} JD keywords in bullet (max 2): ${item.tailored.slice(0, 60)}`);
+        }
+        if (item.tailored.length > 200) {
+          score -= 2;
+          issues.push(`bullet ${item.tailored.length} chars (max 200)`);
+        }
       }
     }
-
-    const kwCount = countJdKeywords(bullet, jdKeywords);
-    if (kwCount > 2) {
-      score -= 3;
-      issues.push(`${kwCount} JD keywords in bullet (max 2): ${bullet.slice(0, 60)}`);
-    }
-
-    if (bullet.length > 200) {
-      score -= 2;
-      issues.push(`bullet ${bullet.length} chars (max 200)`);
-    }
-  }
-
-  // Duplicate companies = structural failure
-  const companies = (result['Work Experience'] || []).map(e => (e.company || '').toLowerCase().trim());
-  if (companies.length !== new Set(companies.filter(Boolean)).size) {
-    score -= 10;
-    issues.push('duplicate company entries remain');
   }
 
   return { score: Math.max(0, score), issues };
 }
 
-// ── Normalize Groq output ──────────────────────────────────────────────────────
+// ── Streaming section parser ───────────────────────────────────────────────────
+// Stateful parser that feeds raw token chunks and emits complete section objects.
 
-function normalizeResult(raw) {
-  console.log('[tailor] raw keys:', Object.keys(raw));
-
-  if (raw._version === 3) {
-    const exp = Array.isArray(raw['Work Experience']) ? raw['Work Experience'] : [];
-    const proj = Array.isArray(raw['Projects']) ? raw['Projects'] : [];
-    console.log('[tailor] v3 | exp:', exp.length, '| proj:', proj.length, '| skills:', (raw['Skills'] || []).length);
-    return {
-      _version: 3,
-      'Summary': typeof raw['Summary'] === 'string' ? raw['Summary'] : '',
-      'Work Experience': exp.map(e => ({
-        title:   e.title   || '',
-        company: e.company || '',
-        period:  e.period  || '',
-        bullets: Array.isArray(e.bullets) ? e.bullets.filter(Boolean) : [],
-      })),
-      'Projects': proj.map(p => ({
-        name:        p.name        || '',
-        description: p.description || '',
-      })),
-      'Skills': Array.isArray(raw['Skills']) ? raw['Skills'].slice(0, 10) : [],
-    };
+class SectionStreamParser {
+  constructor() {
+    this.buf     = '';
+    this.ready   = false;  // true once we've consumed past "sections":[
+    this.depth   = 0;      // brace nesting inside sections array
+    this.start   = -1;     // index of current section's opening {
+    this.inStr   = false;
+    this.esc     = false;
+    this.scanPos = 0;      // resume point — avoids re-scanning already-processed bytes
   }
 
-  // Legacy v1/v2 fallback
-  const summary = typeof raw.summary === 'string' ? raw.summary.trim() : '';
-  const expSource = Array.isArray(raw.experience) ? raw.experience
-                  : Array.isArray(raw.tailored_experience) ? raw.tailored_experience : [];
-  const tailored_experience = expSource.map(e => ({
-    title:   e.title   || e.role    || '',
-    company: e.company || '',
-    period:  e.period  || '',
-    bullets: Array.isArray(e.bullets)          ? e.bullets.filter(Boolean)
-           : Array.isArray(e.tailored_bullets) ? e.tailored_bullets.filter(Boolean)
-           : [],
-  }));
-  const projSource = Array.isArray(raw.projects) ? raw.projects
-                   : Array.isArray(raw.tailored_projects) ? raw.tailored_projects : [];
-  const tailored_projects = projSource.map(p => ({
-    name:    p.name  || p.title || '',
-    bullets: typeof p.description          === 'string' ? [p.description].filter(Boolean)
-           : typeof p.tailored_description === 'string' ? [p.tailored_description].filter(Boolean)
-           : Array.isArray(p.bullets)                   ? p.bullets.filter(Boolean)
-           : [],
-  }));
-  const skills = Array.isArray(raw.skills) ? raw.skills.slice(0, 10) : [];
-  console.log('[tailor] legacy | exp:', tailored_experience.length, '| proj:', tailored_projects.length);
-  return { summary, tailored_experience, tailored_projects, skills };
-}
+  push(chunk) {
+    const out = [];
+    this.buf += chunk;
 
-// ── Public API ─────────────────────────────────────────────────────────────────
-
-const MAX_TAILOR_ATTEMPTS = 2;
-
-async function tailorResume({ parsedResume, jobDescription }) {
-  const experience = parsedResume.experience || [];
-  const projects = parsedResume.projects || [];
-  console.log('Dynamic-section tailor v4 | jobs:', experience.length, '| projects:', projects.length);
-
-  const rawText = getRawResumeText(parsedResume);
-  const jdKeywords = extractJdKeywords(jobDescription);
-  const userMessage = buildUserMessage({ parsedResume, jobDescription });
-
-  let best = null;
-  let bestScore = -1;
-
-  for (let attempt = 1; attempt <= MAX_TAILOR_ATTEMPTS; attempt++) {
-    const raw = await groqJSON(DYNAMIC_SYSTEM, userMessage);
-    let result = normalizeResult(raw);
-    result = postProcessResult(result, parsedResume);
-
-    const { score, issues } = scoreTailoredResult(result, rawText, jdKeywords);
-    console.log(`[tailor] attempt ${attempt} | validation_score: ${score} | issues: ${issues.length}`);
-    if (issues.length) console.log('[tailor] issues:', issues.slice(0, 5));
-
-    if (score > bestScore) {
-      best = result;
-      bestScore = score;
+    if (!this.ready) {
+      const m = /"sections"\s*:\s*\[/.exec(this.buf);
+      if (!m) return out;
+      this.buf     = this.buf.slice(m.index + m[0].length);
+      this.ready   = true;
+      this.scanPos = 0;
     }
 
-    if (score >= 95) break;
-    if (attempt < MAX_TAILOR_ATTEMPTS) console.log('[tailor] score < 95, retrying...');
+    let i = this.scanPos;
+    while (i < this.buf.length) {
+      const c = this.buf[i];
+      if (this.esc)       { this.esc = false; i++; continue; }
+      if (this.inStr) {
+        if (c === '\\')   this.esc = true;
+        else if (c === '"') this.inStr = false;
+        i++; continue;
+      }
+      if      (c === '"') { this.inStr = true; }
+      else if (c === '{') { if (this.depth === 0) this.start = i; this.depth++; }
+      else if (c === '}') {
+        this.depth--;
+        if (this.depth === 0 && this.start >= 0) {
+          try { out.push(JSON.parse(this.buf.slice(this.start, i + 1))); } catch { /* partial */ }
+          this.buf     = this.buf.slice(i + 1);
+          this.start   = -1;
+          i            = -1;
+        }
+      }
+      i++;
+    }
+    this.scanPos = this.buf.length;
+    return out;
+  }
+}
+
+// ── Per-section normalization (used during streaming) ─────────────────────────
+
+function normalizeSectionItem(raw, parsedResume) {
+  if (!raw?.title) return null;
+  const rawText = getRawResumeText(parsedResume);
+  const isExp   = /experience/i.test(raw.title);
+  const content = (raw.content || []).map(item => ({
+    id:       item.id       || '',
+    label:    item.label    || '',
+    original: item.original || '',
+    tailored: isExp
+      ? truncateItem(stripHallucinatedMetrics(item.tailored || '', rawText))
+      : stripHallucinatedMetrics(item.tailored || '', rawText),
+  })).filter(item => item.id);
+  if (!content.length) return null;
+  return {
+    title:     raw.title,
+    rationale: truncateRationale(raw.rationale || ''),
+    content,
+  };
+}
+
+// ── Streaming public API ───────────────────────────────────────────────────────
+
+async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
+  const expCount  = (parsedResume.experience || []).length;
+  const projCount = (parsedResume.projects   || []).length;
+  console.log(`Tailor v6 streaming | exp:${expCount} proj:${projCount}`);
+
+  const userMessage = buildUserMessage({ parsedResume, jobDescription });
+  const parser = new SectionStreamParser();
+  let usage = null;
+
+  const stream = await getClient().chat.completions.create({
+    model:           'llama-3.1-8b-instant',
+    messages: [
+      { role: 'system', content: DYNAMIC_SYSTEM },
+      { role: 'user',   content: userMessage    },
+    ],
+    max_tokens:      3000,
+    temperature:     0.3,
+    // No response_format here — Groq buffers the *entire* JSON for validation before
+    // streaming any tokens when json_object is set. Free-text streaming lets the
+    // SectionStreamParser parse sections incrementally as tokens arrive.
+    stream:          true,
+  }, signal ? { signal } : undefined);
+
+  const t0 = Date.now();
+  let rawCapture = '';
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content || '';
+    if (chunk.usage) usage = chunk.usage;
+    if (rawCapture.length < 600) rawCapture += delta;
+
+    for (const rawSec of parser.push(delta)) {
+      const section = normalizeSectionItem(rawSec, parsedResume);
+      if (section) {
+        console.log(`[tailor] emit "${section.title}" +${Date.now() - t0}ms`);
+        yield { type: 'section', section };
+      }
+    }
   }
 
-  if (bestScore < 95) console.warn(`[tailor] best score ${bestScore} after ${MAX_TAILOR_ATTEMPTS} attempts`);
-  return best;
+  console.log('[tailor] raw output start:', rawCapture.slice(0, 400));
+  console.log('[tailor] parser.ready:', parser.ready, '| buf len:', parser.buf.length);
+  const ptok = usage?.prompt_tokens     || 0;
+  const ctok = usage?.completion_tokens || 0;
+  console.log(`[tailor] stream done | prompt:${ptok} completion:${ctok}`);
+  yield { type: 'done', usage: { promptTokens: ptok, completionTokens: ctok } };
+}
+
+// ── Batch API (used by perf-check.js) ─────────────────────────────────────────
+
+async function tailorResume({ parsedResume, jobDescription }) {
+  const sections = [];
+  let usage = null;
+
+  for await (const event of streamTailorResume({ parsedResume, jobDescription })) {
+    if (event.type === 'section') sections.push(event.section);
+    if (event.type === 'done')    usage = event.usage;
+  }
+
+  const result   = { _version: 4, sections };
+  const rawText  = getRawResumeText(parsedResume);
+  const jdKw     = extractJdKeywords(jobDescription);
+  const { score, issues } = scoreTailoredResult(result, rawText, jdKw);
+  console.log(`[tailor] validation score:${score} | issues:${issues.length}`);
+  if (issues.length) console.log('[tailor] issues:', issues.slice(0, 5));
+  if (score < 80)   console.warn('[tailor] quality warning — score:', score);
+
+  result._usage = usage || {};
+  return result;
 }
 
 // ── Suggestion Validation ─────────────────────────────────────────────────────
+
 function validateSuggestionAST(suggestion) {
   if (!suggestion || typeof suggestion !== 'object') return false;
   const { type, original, replacement } = suggestion;
@@ -365,4 +381,11 @@ function validateSuggestionAST(suggestion) {
   return VALID_TYPES.includes(type);
 }
 
-module.exports = { tailorResume, validateSuggestionAST };
+module.exports = {
+  tailorResume, streamTailorResume, validateSuggestionAST,
+  // pure utilities — exported for unit testing
+  buildUserMessage, getRawResumeText,
+  stripHallucinatedMetrics, truncateItem, truncateRationale,
+  extractMetrics, scoreTailoredResult,
+  _resetClientForTesting: () => { _client = null; },
+};

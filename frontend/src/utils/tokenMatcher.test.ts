@@ -81,7 +81,6 @@ describe('partitionSkills — JS alias applied', () => {
   });
 
   it('handles null/undefined requirements gracefully', () => {
-    // @ts-expect-error intentional null test
     const { matched, missing } = partitionSkills(['React'], null);
     expect(matched).toHaveLength(0);
     expect(missing).toHaveLength(0);

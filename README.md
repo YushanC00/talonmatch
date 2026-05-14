@@ -15,14 +15,14 @@ TalonMatch doesn't just find jobs; it analyzes your professional DNA (skills, hi
 
 ## 🛠 Tech Stack
 
-| Layer              | Technology                             |
-| :----------------- | :------------------------------------- |
-| **Frontend**       | React 18, Vite, Tailwind CSS, Radix UI |
-| **Backend**        | Node.js, Express                       |
-| **Database/Auth**  | Supabase (PostgreSQL + GoTrue)         |
-| **AI Engine**      | Groq (`llama-3.3-70b-versatile`)       |
-| **Data Integrity** | Custom AST Validation Layer            |
-| **APIs**           | JSearch (via OpenWebNinja)             |
+| Layer             | Technology                                    |
+| :---------------- | :-------------------------------------------- |
+| **Frontend**      | React 19, Vite, Tailwind CSS 4, Motion/React  |
+| **Backend**       | Node.js, Express                              |
+| **Database/Auth** | Supabase (PostgreSQL + Google OAuth)          |
+| **AI Engine**     | Groq (`llama-3.1-8b-instant`)                 |
+| **APIs**          | JSearch (via OpenWebNinja)                    |
+| **Analytics**     | PostHog (planned)                             |
 
 ## 🚀 Getting Started
 
@@ -30,6 +30,4 @@ _(Keep your existing Setup instructions here, but consider adding a 'Roadmap' se
 
 ## 🗺 Roadmap
 
-- [ ] **Phase 3:** AST-validated writing suggestions (In Progress)
-- [ ] **Phase 4:** Persistent "Tailored Versions" database & PDF export
-- [ ] **Phase 5:** Multi-resume management for different career tracks
+See [roadmap.md](roadmap.md) for full phase breakdown.

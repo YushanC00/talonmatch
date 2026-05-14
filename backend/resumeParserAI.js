@@ -59,7 +59,7 @@ async function parseResumeAI(rawText) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    throw new Error(`Groq parser returned invalid JSON: ${raw.slice(0, 200)}`);
+    throw new Error(`Groq parser returned invalid JSON: ${raw.slice(0, 200)}`, { cause: e });
   }
 
   return {
@@ -84,4 +84,4 @@ async function parseResumeAI(rawText) {
   };
 }
 
-module.exports = { parseResumeAI };
+module.exports = { parseResumeAI, _resetClientForTesting: () => { _client = null; } };

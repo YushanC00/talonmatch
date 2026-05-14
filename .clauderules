@@ -150,7 +150,9 @@ Guest dropdown must contain:
 
 ## Test Invariants
 
-Write Vitest test BEFORE feature code. Run `npm test` (from `frontend/`) after every refactor. Only present code once ALL tests are green.
+**Frontend:** Write Vitest test BEFORE feature code. Run `npm test` (from `frontend/`) after every refactor. Only present code once ALL tests are green.
+
+**Backend:** Write Jest test BEFORE implementing any new function. Run `npm test` (from `backend/`) after every new function or refactor. Never mark a backend task complete without a passing test suite. Pre-commit hook enforces ≥90% statement coverage — commits are blocked below this threshold.
 
 Match score display rules:
 - `match_score < 100` with requirements → show missing skills list
