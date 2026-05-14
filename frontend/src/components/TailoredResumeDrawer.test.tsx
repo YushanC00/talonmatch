@@ -57,6 +57,120 @@ function renderDrawer(overrides = {}) {
   );
 }
 
+// ── V4 test fixtures ──────────────────────────────────────────────────────────
+
+const V4_JOB = { job_title: 'Senior Dev', company: 'Acme', match_score: 60 };
+const V4_RESUME = { skills: ['React'], experience: [] };
+
+const makeV4Data = (overrides: object = {}) => ({
+  _version: 4,
+  sections: [
+    {
+      title: 'Summary',
+      rationale: 'Tailored summary',
+      content: [
+        { id: 'summary-0', label: '', original: 'Experienced developer.', tailored: 'Experienced React developer.', rationale: 'Added React' },
+      ],
+    },
+    {
+      title: 'Work Experience',
+      rationale: 'Highlighted skills',
+      content: [
+        { id: 'we-acme-0', label: 'Dev @ Acme', original: 'Built features.', tailored: 'Built scalable React features.', rationale: 'Added scale' },
+        { id: 'we-acme-1', label: '', original: 'Wrote tests.', tailored: 'Wrote tests.', rationale: '' }, // unchanged
+      ],
+    },
+    ...((overrides as { extraSections?: object[] }).extraSections ?? []),
+  ],
+});
+
+function renderV4Drawer(dataOverrides: object = {}, propOverrides: object = {}) {
+  return render(
+    <TailoredResumeDrawer
+      data={makeV4Data(dataOverrides) as unknown as Record<string, unknown>}
+      job={V4_JOB}
+      parsedResume={V4_RESUME}
+      jobTitle="Senior Dev"
+      company="Acme"
+      onClose={vi.fn()}
+      onCommit={vi.fn()}
+      {...propOverrides}
+    />
+  );
+}
+
+const getScore = () =>
+  parseInt(screen.getByTestId('match-score-badge').getAttribute('data-score') ?? '0', 10);
+
+describe('TailoredResumeDrawer — V4 live match score', () => {
+  it('shows base job match score initially', () => {
+    renderV4Drawer();
+    // V4 with no requirements_array → baseScore = job.match_score = 60; no items accepted → 60
+    expect(getScore()).toBe(60);
+  });
+
+  it('score increases when a changed item is accepted', () => {
+    renderV4Drawer();
+    // 2 changed items total (summary-0 + we-acme-0); we-acme-1 unchanged so excluded
+    // Accept summary-0 → 1/2 accepted → bonus = round(0.5 * (99-60)) = round(19.5) = 20 → score = 80
+    const acceptBtns = screen.getAllByTitle('Accept');
+    fireEvent.click(acceptBtns[0]); // accept summary-0
+    expect(getScore()).toBe(80);
+  });
+
+  it('score reaches near-max when all changed items accepted', () => {
+    renderV4Drawer();
+    const acceptBtns = screen.getAllByTitle('Accept');
+    acceptBtns.forEach(btn => fireEvent.click(btn));
+    // 2/2 accepted → bonus = 39 → score = 99 (capped)
+    expect(getScore()).toBe(99);
+  });
+
+  it('score never exceeds 99 even at high base', () => {
+    const highScoreJob = { ...V4_JOB, match_score: 98 };
+    render(
+      <TailoredResumeDrawer
+        data={makeV4Data() as unknown as Record<string, unknown>}
+        job={highScoreJob}
+        parsedResume={V4_RESUME}
+        jobTitle="Senior Dev"
+        company="Acme"
+        onClose={vi.fn()}
+        onCommit={vi.fn()}
+      />
+    );
+    const acceptBtns = screen.getAllByTitle('Accept');
+    acceptBtns.forEach(btn => fireEvent.click(btn));
+    // baseScore=98, maxBonus=1, 2/2 accepted → 99 (not 100)
+    expect(getScore()).toBe(99);
+  });
+
+  it('unchanged items (tailored equals original) do not contribute to bonus', () => {
+    // Data with ONLY unchanged items
+    const noChangesData = {
+      _version: 4,
+      sections: [{
+        title: 'Summary',
+        rationale: '',
+        content: [{ id: 'summary-0', label: '', original: 'Same text.', tailored: 'Same text.', rationale: '' }],
+      }],
+    };
+    render(
+      <TailoredResumeDrawer
+        data={noChangesData as unknown as Record<string, unknown>}
+        job={V4_JOB}
+        parsedResume={V4_RESUME}
+        jobTitle="Senior Dev"
+        company="Acme"
+        onClose={vi.fn()}
+        onCommit={vi.fn()}
+      />
+    );
+    // No changed items → v4TotalChanges = 0 → contentBonus = 0 → score stays at 60
+    expect(getScore()).toBe(60);
+  });
+});
+
 describe('TailoredResumeDrawer — rendering', () => {
   it('renders job title and company', () => {
     renderDrawer();

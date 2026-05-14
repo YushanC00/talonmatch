@@ -177,10 +177,12 @@ app.post('/api/tailor-resume', async (req, res) => {
   }, 200);
 
   const ac = new AbortController();
-  req.on('close', () => {
-    console.log(`[tailor] client disconnected +${Date.now() - t_route}ms`);
-    clearInterval(keepalive);
-    ac.abort();
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      console.log(`[tailor] client disconnected +${Date.now() - t_route}ms`);
+      clearInterval(keepalive);
+      ac.abort();
+    }
   });
 
   try {

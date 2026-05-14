@@ -255,4 +255,35 @@ describe('POST /api/tailor-resume', () => {
       jobDescription: 'JD',
     }));
   });
+
+  it('handles non-abort stream error without crashing', async () => {
+    async function* errorStream() {
+      throw new Error('Groq network timeout');
+    }
+    streamTailorResume.mockReturnValue(errorStream());
+
+    const res = await request(app)
+      .post('/api/tailor-resume')
+      .send({ parsed_resume: PARSED_RESUME, job_description: 'JD' })
+      .buffer(true);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+  });
+
+  it('handles AbortError during stream without crashing', async () => {
+    async function* abortStream() {
+      const err = new Error('Request aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
+    streamTailorResume.mockReturnValue(abortStream());
+
+    const res = await request(app)
+      .post('/api/tailor-resume')
+      .send({ parsed_resume: PARSED_RESUME, job_description: 'JD' })
+      .buffer(true);
+
+    expect(res.status).toBe(200);
+  });
 });

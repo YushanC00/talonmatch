@@ -29,11 +29,12 @@ IDs: summary-0 | we-{co_slug}-{N} | proj-{slug}-0 | skills-hard-0 / skills-soft-
 Work Experience label = "Role @ Company (Period)" on every item.
 
 Each section gets ONE rationale field (max 12 words explaining JD alignment).
+Each content item gets a rationale field (max 8 words, WHY this change matches JD; empty string if tailored equals original).
 Output Summary section FIRST so the frontend can render immediately.
 Include ONLY sections present in the source resume.
 
 OUTPUT FORMAT:
-{"_version":4,"sections":[{"title":"Summary","rationale":"<12w>","content":[{"id":"summary-0","label":"","original":"...","tailored":"..."}]},{"title":"Work Experience","rationale":"<12w>","content":[{"id":"we-acme-0","label":"Sr Engineer @ Acme (2021–Now)","original":"Built API...","tailored":"Designed high-throughput API..."}]},{"title":"Skills","rationale":"<12w>","content":[{"id":"skills-hard-0","label":"Technical","original":"React, TS...","tailored":"React, TS..."},{"id":"skills-soft-0","label":"Soft","original":"","tailored":"Communication, Collaboration"}]}]}`;
+{"_version":4,"sections":[{"title":"Summary","rationale":"<12w>","content":[{"id":"summary-0","label":"","original":"...","tailored":"...","rationale":"<8w or empty>"}]},{"title":"Work Experience","rationale":"<12w>","content":[{"id":"we-acme-0","label":"Sr Engineer @ Acme (2021–Now)","original":"Built API...","tailored":"Designed high-throughput API...","rationale":"highlights distributed systems expertise"}]},{"title":"Skills","rationale":"<12w>","content":[{"id":"skills-hard-0","label":"Technical","original":"React, TS...","tailored":"React, TS...","rationale":""}]}]}`;
 
 // ── JD context stripping ───────────────────────────────────────────────────────
 
@@ -288,6 +289,7 @@ function normalizeSectionItem(raw, parsedResume) {
     tailored: isExp
       ? truncateItem(stripHallucinatedMetrics(item.tailored || '', rawText))
       : stripHallucinatedMetrics(item.tailored || '', rawText),
+    rationale: (item.rationale || '').trim().slice(0, 80),
   })).filter(item => item.id);
   if (!content.length) return null;
   return {

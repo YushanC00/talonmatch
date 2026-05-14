@@ -56,6 +56,7 @@ export interface TailoredContentItem {
   label: string
   original: string
   tailored: string
+  rationale?: string
 }
 
 export interface TailoredSection {

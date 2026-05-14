@@ -1,5 +1,5 @@
 import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, useAnimation } from 'motion/react';
 import * as Diff from 'diff';
 import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
@@ -15,6 +15,7 @@ interface DrawerInnerProps {
   autoAccept?: boolean
   onClose: () => void
   onCommit: (jobId: string) => void
+  onCommitWithState?: (reviews: Record<string, string>, editValues: Record<string, string>) => void
   isLoggedIn?: boolean
   onRequestAuth?: () => void
   initialReviews?: Record<string, string> | null
@@ -132,6 +133,7 @@ function TailoredResumeDrawerInner({
   autoAccept = false,
   onClose,
   onCommit,
+  onCommitWithState,
   isLoggedIn = true,
   onRequestAuth,
   initialReviews = null,
@@ -282,11 +284,40 @@ function TailoredResumeDrawerInner({
   }, [reviews, editValues, isV4, v4Sections]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const newlyMatchedCount = [...acceptedInjectedSkills].filter((s: unknown) => missingSkillsSet.has(s as string)).length;
+
+  // V4: count changed items (tailored ≠ original) and how many are accepted
+  const v4TotalChanges = isV4
+    ? v4Sections.reduce((n, sec) => {
+        if (/^skills/i.test(sec.title)) return n;
+        return n + (sec.content || []).filter(i => i.tailored !== i.original).length;
+      }, 0)
+    : 0;
+  const v4AcceptedChanges = isV4
+    ? v4Sections.reduce((n, sec) => {
+        if (/^skills/i.test(sec.title)) return n;
+        return n + (sec.content || []).filter(i => {
+          const rkey = `${sec.title}:${i.id}`;
+          return i.tailored !== i.original && reviews[rkey] === 'accepted';
+        }).length;
+      }, 0)
+    : 0;
+
+  // Base score: same value as JobCard — backend match_score with 99-cap when skills missing
+  const rawJobScore = savedMatchScore ?? job?.match_score ?? 0;
+  const baseScore = missingSkillsSet.size > 0 ? Math.min(rawJobScore, 99) : rawJobScore;
+  // Content bonus: each accepted V4 change earns a share of the remaining gap to 99
+  const maxBonus = Math.max(0, 99 - baseScore);
+  const contentBonus = isV4 && v4TotalChanges > 0
+    ? Math.round((v4AcceptedChanges / v4TotalChanges) * maxBonus)
+    : 0;
+
   const dynamicScore = (isNewFormat || isV3)
     ? (job?.match_score ?? savedMatchScore ?? 0)
-    : totalRequirements > 0
-      ? Math.round(((baseMatchedCount + newlyMatchedCount) / totalRequirements) * 100)
-      : (savedMatchScore ?? job?.match_score ?? 0);
+    : isV4
+      ? Math.min(99, baseScore + contentBonus)
+      : totalRequirements > 0
+        ? Math.round(((baseMatchedCount + newlyMatchedCount) / totalRequirements) * 100)
+        : (savedMatchScore ?? job?.match_score ?? 0);
 
   useEffect(() => {
     if (prevScoreRef.current !== null && dynamicScore > prevScoreRef.current) {
@@ -296,6 +327,34 @@ function TailoredResumeDrawerInner({
     }
     prevScoreRef.current = dynamicScore;
   }, [dynamicScore]);
+
+  // Animated score counter — ticks from old value to new on change
+  const [displayedScore, setDisplayedScore] = useState(dynamicScore);
+  const scoreAnimRef = useRef<number | null>(null);
+  const scorePulse = useAnimation();
+
+  useEffect(() => {
+    if (scoreAnimRef.current) cancelAnimationFrame(scoreAnimRef.current);
+    const from = displayedScore;
+    const to = dynamicScore;
+    if (from === to) return;
+    const duration = 480;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      setDisplayedScore(Math.round(from + (to - from) * eased));
+      if (t < 1) scoreAnimRef.current = requestAnimationFrame(tick);
+    };
+    scoreAnimRef.current = requestAnimationFrame(tick);
+    return () => { if (scoreAnimRef.current) cancelAnimationFrame(scoreAnimRef.current); };
+  }, [dynamicScore]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scale pulse on badge when score increases
+  useEffect(() => {
+    if (!flashing) return;
+    scorePulse.start({ scale: [1, 1.13, 0.97, 1], transition: { duration: 0.45, ease: 'easeOut' } });
+  }, [flashing, scorePulse]);
 
   const getFinalBullet = (bullet: string | LegacyBullet, i: number, j: number, prefix = 'exp') => {
     const rkey = `${prefix}-${i}-${j}`;
@@ -355,6 +414,7 @@ function TailoredResumeDrawerInner({
     }
     const jobId = job?.url || `${jobTitle}|${company}`;
     onCommit?.(jobId);
+    onCommitWithState?.(reviews, editValues);
     setCommitting(true);
     const tailoredJson = { aiResponse: data, reviews, editValues };
     try {
@@ -368,7 +428,7 @@ function TailoredResumeDrawerInner({
       setCommitting(false);
       setTimeout(() => setToast(null), 3500);
     }
-  }, [job, jobTitle, company, data, reviews, editValues, onCommit, isLoggedIn, onRequestAuth]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job, jobTitle, company, data, reviews, editValues, onCommit, onCommitWithState, isLoggedIn, onRequestAuth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollTo = useCallback((key: string) => {
     const el = sectionRefs.current[key];
@@ -442,6 +502,7 @@ function TailoredResumeDrawerInner({
     <button
       className="tailor-edit-btn"
       onClick={onClick}
+      title="Edit"
       style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid var(--rule)', borderRadius: 2, padding: '3px 7px', background: 'var(--paper)', color: 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 11 }}
     >
       <Pencil size={10} strokeWidth={1.8} />
@@ -510,12 +571,10 @@ function TailoredResumeDrawerInner({
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50 }} role="dialog" aria-modal="true">
 
-      {/* CSS for hover-reveal edit buttons */}
+      {/* CSS for edit buttons — always visible at low opacity, full on hover/focus */}
       <style>{`
-        .tailor-bullet-row .tailor-edit-btn,
-        .tailor-proj-row .tailor-edit-btn { opacity: 0; transition: opacity 150ms; }
-        .tailor-bullet-row:hover .tailor-edit-btn,
-        .tailor-proj-row:hover .tailor-edit-btn { opacity: 1; }
+        .tailor-edit-btn { opacity: 0.35; transition: opacity 150ms; }
+        .tailor-edit-btn:hover, .tailor-edit-btn:focus { opacity: 1; }
       `}</style>
 
       {/* Backdrop */}
@@ -585,14 +644,23 @@ function TailoredResumeDrawerInner({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               {/* Match score badge */}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 2, background: flashing ? 'var(--moss)' : '#E8EFD9', color: flashing ? 'var(--paper)' : 'var(--moss-deep)', fontFamily: 'Inter', fontSize: 13, fontWeight: 700, border: `1px solid ${flashing ? 'var(--moss)' : 'var(--moss-soft)'}`, transition: 'background 300ms ease, color 300ms ease, border-color 300ms ease' }}>
+              <motion.span animate={scorePulse} data-score={dynamicScore} data-testid="match-score-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 2, background: flashing ? 'var(--moss)' : '#E8EFD9', color: flashing ? 'var(--paper)' : 'var(--moss-deep)', fontFamily: 'Inter', fontSize: 13, fontWeight: 700, border: `1px solid ${flashing ? 'var(--moss)' : 'var(--moss-soft)'}`, transition: 'background 300ms ease, color 300ms ease, border-color 300ms ease', transformOrigin: 'center' }}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <rect x="2"    y="9" width="2.6" height="5"  fill="currentColor"/>
                   <rect x="6.7"  y="6" width="2.6" height="8"  fill="currentColor"/>
                   <rect x="11.4" y="3" width="2.6" height="11" fill="currentColor"/>
                 </svg>
-                {dynamicScore}% match
-              </span>
+                {displayedScore}% match
+              </motion.span>
+              {/* Apply link — only when job has URL */}
+              {job?.url && (
+                <a href={job.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', border: 'none', borderRadius: 2, background: 'var(--moss)', color: 'var(--paper)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, textDecoration: 'none', boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)' }}>
+                  Apply
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                    <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </a>
+              )}
               {/* PDF */}
               <button onClick={handleDownload} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', color: 'var(--sumi)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
                 <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -741,6 +809,12 @@ function TailoredResumeDrawerInner({
                                       {item.label}
                                     </div>
                                   )}
+                                  {item.rationale && item.tailored !== item.original && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                      <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--moss-soft)', flexShrink: 0 }} />
+                                      <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.16em', color: 'var(--moss-deep)', textTransform: 'uppercase', fontStyle: 'normal' }}>{item.rationale}</span>
+                                    </div>
+                                  )}
                                   {editMode[rkey] ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                       <textarea value={currText} onChange={e => setEditValues(prev => ({ ...prev, [rkey]: e.target.value }))} style={textareaStyle} rows={3} />
@@ -750,7 +824,7 @@ function TailoredResumeDrawerInner({
                                     <div className="tailor-bullet-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', border: `1px solid ${status === 'accepted' ? 'var(--moss-soft)' : status === 'cancelled' ? 'var(--shu-soft)' : 'var(--rule)'}`, borderRadius: 3, background: status === 'accepted' ? 'rgba(90,122,78,0.04)' : status === 'cancelled' ? 'rgba(168,94,62,0.04)' : 'var(--paper)', transition: 'border-color 200ms, background 200ms' }}>
                                       <span style={{ marginTop: 9, width: 4, height: 4, borderRadius: '50%', background: status === 'accepted' ? 'var(--moss-soft)' : status === 'cancelled' ? 'var(--shu-soft)' : 'var(--rule)', flexShrink: 0 }} />
                                       <div style={{ flex: 1 }}>
-                                        <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0 }}>
+                                        <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0, whiteSpace: 'pre-wrap' }}>
                                           {editValues[rkey] !== undefined
                                             ? editValues[rkey]
                                             : status === 'cancelled'

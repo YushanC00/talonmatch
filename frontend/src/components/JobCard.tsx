@@ -24,6 +24,29 @@ interface JobCardProps {
   index?: number;
 }
 
+function parseSalaryFromDesc(desc: string | undefined): string | null {
+  if (!desc) return null;
+  const num = '(?:CA)?\\$[\\d,]+(?:\\.\\d+)?k?';
+  const period = '\\/\\s*(?:hr|hour|year|yr|annum)|per\\s+(?:year|annum|hour)';
+  // Pattern 1b first (more specific): $MIN/period – $MAX/period
+  const m1b = desc.match(new RegExp(`(${num})\\s*(?:${period})\\s*[-–—]\\s*(${num})\\s*(?:${period})`, 'i'));
+  if (m1b) {
+    const prices = m1b[0].match(new RegExp(num, 'gi')) || [];
+    const per = (m1b[0].match(new RegExp(period, 'i')) || [''])[0].trim().replace(/^\/\s*/, '');
+    return prices.length >= 2 ? `${prices[0]} – ${prices[1]}/${per}` : `${prices[0]}/${per}`;
+  }
+  // Pattern 1a: $MIN – $MAX/period  (standard format)
+  const m1 = desc.match(new RegExp(`${num}(?:\\s*[-–—]\\s*${num})?\\s*(?:${period})`, 'i'));
+  if (m1) return m1[0].replace(/\s+/g, ' ').trim();
+  // Pattern 2: salary keyword + dollar range (no explicit period)
+  const m2 = desc.match(/(?:salary|compensation|pay range|base pay|total comp)[:\s]+(?:CA)?\$[\d,]+(?:\.\d+)?k?(?:\s*[-–—]\s*(?:CA)?\$[\d,]+(?:\.\d+)?k?)?/i);
+  if (m2) {
+    const inner = m2[0].match(new RegExp(`${num}(?:\\s*[-–—]\\s*${num})?`, 'i'));
+    return inner ? inner[0].replace(/\s+/g, ' ').trim() : null;
+  }
+  return null;
+}
+
 function formatRelativeTime(isoString: string | null | undefined): string | null {
   if (!isoString) return null;
   const diffMs = Date.now() - new Date(isoString).getTime();
@@ -156,6 +179,11 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
   const [tailored, setTailored] = useState<TailoredResume | null>(null);
   const [tailorError, setTailorError] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [committedData, setCommittedData] = useState<{
+    tailored: TailoredResume;
+    reviews: Record<string, string>;
+    editValues: Record<string, string>;
+  } | null>(null);
 
   const showRemote = is_remote
     || /remote/i.test(location || '')
@@ -164,6 +192,7 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
 
   const cityName = location ? location.split(',')[0].trim() : '';
   const relativeDate = formatRelativeTime(postedAt);
+  const effectivePay = pay_range || parseSalaryFromDesc(description);
 
   const resumeSkills = parsedResume?.skills || [];
   const { matched: matchedSkills, missing: missingSkills } = partitionSkills(resumeSkills, requirements_array);
@@ -179,15 +208,20 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
   function buildInitialSections(resume: ParsedResume | null) {
     const sections: TailoredSection[] = [];
     const slug = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
-    if (resume?.summary) {
-      sections.push({ title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: resume.summary, tailored: resume.summary }] });
-    }
+    // Mirror backend splitDescription so bullet count matches AI output structure
+    const splitDesc = (desc: string): string[] =>
+      (desc || '').split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(s => s.length > 10);
+    // Always pre-populate Summary at position 0 so AI response replaces in-place (not appended)
+    const summaryText = resume?.summary || '';
+    sections.push({ title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: summaryText, tailored: summaryText }] });
     if (resume?.experience?.length) {
       const content = resume.experience.flatMap((job, _ei) => {
-        const bullets = Array.isArray(job.bullets) && job.bullets.length > 0 ? job.bullets : (job.description ? [job.description] : []);
+        const bullets = Array.isArray(job.bullets) && job.bullets.length > 0
+          ? job.bullets
+          : splitDesc(job.description || '');
         const co = slug(job.company);
         const lbl = `${job.title} @ ${job.company} (${job.period})`;
-        return bullets.map((b: string, bi: number) => ({ id: `we-${co}-${bi}`, label: bi === 0 ? lbl : '', original: b, tailored: b }));
+        return bullets.slice(0, 6).map((b: string, bi: number) => ({ id: `we-${co}-${bi}`, label: bi === 0 ? lbl : '', original: b, tailored: b }));
       });
       if (content.length) sections.push({ title: 'Work Experience', rationale: '', content });
     }
@@ -225,6 +259,8 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120_000);
+    const t0 = performance.now();
+    let ttfs: number | null = null;
 
     try {
       const res = await fetch('/api/tailor-resume', {
@@ -255,7 +291,6 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        console.log('SSE RAW:', chunk.slice(0, 120));
         sseBuf += chunk;
         const parts = sseBuf.split('\n\n');
         sseBuf = parts.pop() ?? '';
@@ -264,10 +299,13 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
           const line = part.split('\n').find(l => l.startsWith('data: '));
           if (!line) continue;
           let event;
-          try { event = JSON.parse(line.slice(6)); } catch (e) { console.log('SSE PARSE ERR:', (e as Error).message, line.slice(0, 80)); continue; }
+          try { event = JSON.parse(line.slice(6)); } catch (e) { console.log('[tailor] SSE parse err:', (e as Error).message, line.slice(0, 80)); continue; }
 
           if (event.type === 'section') {
-            console.log('FRONTEND RECEIVED:', event.section.title, 'items:', event.section.content?.length);
+            if (ttfs === null) {
+              ttfs = Math.round(performance.now() - t0);
+              console.log(`[perf] TTFS ${ttfs}ms — "${event.section.title}"`);
+            }
             setTailored(prev => {
               const existing = prev?.sections || [];
               const idx = existing.findIndex(s => s.title === event.section.title);
@@ -280,8 +318,10 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
             });
           } else if (event.type === 'error') {
             throw new Error(event.message);
+          } else if (event.type === 'done') {
+            const total = Math.round(performance.now() - t0);
+            console.log(`[perf] stream done — total ${total}ms  TTFS ${ttfs ?? '?'}ms`);
           }
-          // 'done' event: stream finished cleanly — no action needed
         }
       }
     } catch (err) {
@@ -415,9 +455,6 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
           ) : (
             <span className="tm-mincho" style={{ fontSize: 14, fontWeight: 600, color: 'var(--sumi)' }}>{company}</span>
           )}
-          {pay_range && (
-            <span className="tm-mono" style={{ fontSize: 10, color: 'var(--moss)', fontWeight: 600, letterSpacing: '0.05em' }}>{pay_range}</span>
-          )}
         </div>
 
         {/* META ROW — vertical rule separators */}
@@ -435,6 +472,12 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
             <span data-testid="remote-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--moss-deep)' }}>
               <Globe size={11} strokeWidth={1.5} />
               Remote
+            </span>
+          )}
+          {effectivePay && <span style={{ width: 1, height: 10, background: 'var(--rule)', flexShrink: 0 }} />}
+          {effectivePay && (
+            <span className="tm-mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--moss)', fontWeight: 600, fontSize: 10, letterSpacing: '0.06em' }}>
+              {effectivePay}
             </span>
           )}
         </div>
@@ -456,20 +499,41 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
 
             <div>
               {isTailored ? (
-                url && (
-                  <a href={url} target="_blank" rel="noopener noreferrer" className="action-fade-in"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '6px 11px', background: 'var(--moss)', color: 'var(--paper)',
-                      border: 'none', borderRadius: 2, fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
-                      textDecoration: 'none',
-                      boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)',
-                    }}>
-                    Ready to Apply
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                      <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </a>
+                (committedData || url) && (
+                  <div className="action-fade-in" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    {committedData && (
+                      <button
+                        onClick={() => setTailored(committedData.tailored)}
+                        style={{
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                          fontFamily: 'Inter', fontSize: 12, fontWeight: 500,
+                          color: 'var(--sumi-mute)', textDecoration: 'underline',
+                          textUnderlineOffset: 3,
+                        }}>
+                        Edit
+                      </button>
+                    )}
+                    {committedData && url && (
+                      <span style={{ color: 'var(--rule)', fontSize: 11 }}>·</span>
+                    )}
+                    {url && (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '6px 11px', background: 'var(--moss)', color: 'var(--paper)',
+                          textDecoration: 'none', borderRadius: 2, fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
+                          boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)',
+                        }}>
+                        Apply
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                          <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
                 )
               ) : (() => {
                 const hasResume = parsedResume?.experience?.length > 0;
@@ -575,8 +639,11 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
             setShowAuthModal(true);
           }}
           onCommit={(jobId: string) => onCommitTailoring?.(jobId)}
-          initialReviews={null}
-          initialEditValues={null}
+          onCommitWithState={(reviews, editValues) => {
+            if (tailored) setCommittedData({ tailored, reviews, editValues });
+          }}
+          initialReviews={committedData?.reviews ?? null}
+          initialEditValues={committedData?.editValues ?? null}
           savedMatchScore={null}
           streaming={tailoring}
         />

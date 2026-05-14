@@ -10,7 +10,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 const path = require('path');
 const fs   = require('fs');
-const { tailorResume } = require('../tailorResume');
+const { streamTailorResume } = require('../tailorResume');
 
 // ── Parse args ─────────────────────────────────────────────────────────────────
 
@@ -103,22 +103,29 @@ async function run() {
     process.stdout.write(`${label} … `);
     const t0 = Date.now();
     try {
-      const result = await tailorResume({ parsedResume, jobDescription });
-      const ms = Date.now() - t0;
+      const sections = [];
+      let ttfs = null;   // time-to-first-section
+      let ctok = 0;
 
-      const sections   = result.sections || [];
-      const secNames   = sections.map(s => `${s.title}(${s.content?.length ?? 0})`).join(', ');
-      const totalItems = sections.reduce((n, s) => n + (s.content?.length || 0), 0);
-      const allHaveRationale = sections.every(s => (s.content || []).every(item => item.rationale));
-      const ctok = result._usage?.completionTokens || 0;
-      const tps  = ctok > 0 ? Math.round(ctok / (ms / 1000)) : null;
+      for await (const event of streamTailorResume({ parsedResume, jobDescription })) {
+        if (event.type === 'section') {
+          if (ttfs === null) ttfs = Date.now() - t0;
+          sections.push(event.section);
+        }
+        if (event.type === 'done') ctok = event.usage?.completionTokens || 0;
+      }
 
-      results.push({ run: i + 1, ms, ok: true, sections: sections.length, totalItems, ctok, tps });
-      const tpsStr = tps ? `${tps} tok/s` : 'n/a';
-      console.log(`${ms}ms  |  ${ctok} tok  |  ${tpsStr}  |  sections: ${secNames}`);
+      const ms     = Date.now() - t0;
+      const secNames = sections.map(s => `${s.title}(${s.content?.length ?? 0})`).join(', ');
+      const tps    = ctok > 0 ? Math.round(ctok / (ms / 1000)) : null;
+
+      results.push({ run: i + 1, ms, ttfs, ok: true, sections: sections.length, ctok, tps });
+      const tpsStr  = tps ? `${tps} tok/s` : 'n/a';
+      const ttfsStr = ttfs != null ? `TTFS ${ttfs}ms` : 'TTFS n/a';
+      console.log(`total ${ms}ms  |  ${ttfsStr}  |  ${ctok} tok  |  ${tpsStr}  |  ${secNames}`);
     } catch (err) {
       const ms = Date.now() - t0;
-      results.push({ run: i + 1, ms, ok: false, error: err.message });
+      results.push({ run: i + 1, ms, ttfs: null, ok: false, error: err.message });
       console.log(`FAILED (${ms}ms) — ${err.message}`);
     }
   }
@@ -130,19 +137,23 @@ async function run() {
     process.exit(1);
   }
 
-  const latencies = successful.map(r => r.ms);
-  const min = Math.min(...latencies);
-  const max = Math.max(...latencies);
-  const avg = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+  const latencies  = successful.map(r => r.ms);
+  const ttfsValues = successful.map(r => r.ttfs).filter(v => v != null);
+  const min     = Math.min(...latencies);
+  const max     = Math.max(...latencies);
+  const avg     = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+  const ttfsMin = ttfsValues.length ? Math.min(...ttfsValues) : null;
+  const ttfsAvg = ttfsValues.length ? Math.round(ttfsValues.reduce((a, b) => a + b, 0) / ttfsValues.length) : null;
   const tpsValues = successful.map(r => r.tps).filter(Boolean);
-  const avgTps = tpsValues.length ? Math.round(tpsValues.reduce((a, b) => a + b, 0) / tpsValues.length) : null;
+  const avgTps  = tpsValues.length ? Math.round(tpsValues.reduce((a, b) => a + b, 0) / tpsValues.length) : null;
   const avgCtok = Math.round(successful.reduce((a, r) => a + (r.ctok || 0), 0) / successful.length);
 
   console.log(`\n── Summary ───────────────────────────────────────────────`);
   console.log(`  Successful   : ${successful.length}/${RUNS}`);
-  console.log(`  TTFT min     : ${min}ms`);
-  console.log(`  TTFT avg     : ${avg}ms`);
-  console.log(`  TTFT max     : ${max}ms`);
+  if (ttfsAvg != null) {
+    console.log(`  TTFS avg     : ${ttfsAvg}ms  (min ${ttfsMin}ms)  ← time to first section`);
+  }
+  console.log(`  Total avg    : ${avg}ms  (min ${min}ms  max ${max}ms)`);
   console.log(`  Avg output   : ${avgCtok} tokens`);
   if (avgTps) console.log(`  Avg TPS      : ${avgTps} tok/s`);
   console.log(`──────────────────────────────────────────────────────────\n`);
