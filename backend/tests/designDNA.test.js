@@ -164,6 +164,41 @@ describe('detectSections', () => {
     const items = [makeItem(long, 14)];
     expect(detectSections(items, 10)).toHaveLength(0);
   });
+
+  it('filters short fragments (<5 normalized chars)', () => {
+    const items = [makeItem('SIWY', 14)]; // pdfjs WYSIWYG artifact
+    expect(detectSections(items, 10)).toHaveLength(0);
+  });
+
+  it('keeps header-band items that match section keywords', () => {
+    // y=720 is in the top 18% of a page with maxY=726 (>= 726*0.82=595)
+    const items = [
+      { str: 'Professional Profile', fontSize: 13, x: 300, y: 720, fontName: '', page: 1 },
+      { str: 'Some body text here.', fontSize: 10, x: 300, y: 710, fontName: '', page: 1 },
+    ];
+    const sections = detectSections(items, 10);
+    expect(sections.map(s => s.title)).toContain('Professional Profile');
+  });
+
+  it('drops header-band items that do NOT match section keywords', () => {
+    // "Teach Lead" is a job title — no section keyword → filtered out in header band
+    const items = [
+      { str: 'Teach Lead', fontSize: 13, x: 50, y: 720, fontName: '', page: 1 },
+      { str: 'Yushan Chang', fontSize: 20, x: 50, y: 726, fontName: '', page: 1 },
+    ];
+    const sections = detectSections(items, 10);
+    expect(sections.map(s => s.title)).not.toContain('Teach Lead');
+    expect(sections.map(s => s.title)).not.toContain('Yushan Chang');
+  });
+
+  it('does not apply header-band filter to page 2+ items', () => {
+    // "Soft Skills" at top of page 2 should not be filtered even though y is high
+    const items = [
+      { str: 'Soft Skills', fontSize: 13, x: 50, y: 720, fontName: '', page: 2 },
+    ];
+    const sections = detectSections(items, 10);
+    expect(sections.map(s => s.title)).toContain('Soft Skills');
+  });
 });
 
 // ── classifySectionColumns ────────────────────────────────────────────────────
@@ -201,6 +236,10 @@ describe('rgbToHex', () => {
     expect(rgbToHex(1, 1, 1)).toBe('#ffffff');
   });
 });
+
+// ── cmykToRgb (scale normalization covered via integration) ───────────────────
+// The 0-255 RGB normalization in extractColors is pdfjs-integration-only,
+// tested via the extractDesignDNA null/shape tests above.
 
 // ── isNeutral ─────────────────────────────────────────────────────────────────
 

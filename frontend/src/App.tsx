@@ -8,6 +8,7 @@ import UserMenu from './components/UserMenu';
 import { supabase } from './lib/supabase';
 import { resolveCity } from './utils/geolocation';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
+import DesignDNAPanel from './components/DesignDNAPanel';
 import './index.css';
 
 function TalonMark({ size = 36 }) {
@@ -659,6 +660,14 @@ export default function App() {
               })()}
             </p>
           </div>
+        )}
+
+        {/* Design DNA — shown once style_config is available */}
+        {revealed && parsedResume.style_config && (
+          <DesignDNAPanel
+            config={parsedResume.style_config}
+            candidateName={parsedResume.full_name || undefined}
+          />
         )}
 
         {/* Feed — always in DOM, blurred+grayscale until revealed */}

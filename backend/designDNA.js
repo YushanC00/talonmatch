@@ -52,7 +52,8 @@ function detectColumns(xValues, pageWidth) {
   return 1;
 }
 
-const BULLET_CHARS = ['•', '·', '–', '—', '-', '○', '◦', '▸', '▪', '‣'];
+// Excludes '-' (too common in dates/ranges) and adds '●','■' used in modern CVs
+const BULLET_CHARS = ['•', '·', '–', '—', '●', '■', '○', '◦', '▸', '▪', '‣', '›'];
 
 function detectBullet(texts) {
   const counts = {};
@@ -64,19 +65,36 @@ function detectBullet(texts) {
   return entries[0]?.[0] ?? null;
 }
 
+// Words that strongly suggest a resume section heading
+const SECTION_KEYWORDS = /profile|professional|experience|work|employment|education|skills|technical|stack|project|summary|objective|about|certif|award|language|interest|contact|volunteer|leadership|soft|reference|publication|qualif|career|background|achievement|honor|activity|activities/i;
+
 // Section headings with their x positions
 function detectSections(items, bodySize) {
+  // In the top band of page 1, items may be the name, job title, or a right-column
+  // section heading starting at the same height. Use keyword matching to distinguish:
+  // only allow header-band items through if they look like section headings.
+  const page1MaxY = items
+    .filter(i => i.page === 1)
+    .reduce((m, i) => Math.max(m, i.y || 0), 0);
+  // Top 18% of page 1 = header band (name, title, contact info area)
+  const headerBandCutoff = page1MaxY * 0.82;
+
   const seen = new Set();
   const sections = [];
   for (const item of items) {
     const txt = item.str.trim();
     if (!txt || txt.length > 40) continue;
+    // In the header band on page 1, only keep items that match section heading keywords
+    if (item.page === 1 && (item.y || 0) >= headerBandCutoff) {
+      if (!SECTION_KEYWORDS.test(txt)) continue;
+    }
     const isHeadingSize = (item.fontSize ?? itemFontSize(item)) >= bodySize + 0.5;
     const isAllCaps = txt === txt.toUpperCase() && /[A-Z]/.test(txt);
     const isBoldFont  = BOLD_HINTS.test(item.fontName || '');
     if (isHeadingSize || isAllCaps || (isBoldFont && txt.length >= 3)) {
       const normalized = txt.replace(/[^a-z\s]/gi, '').trim();
-      if (normalized.length > 1 && !seen.has(normalized.toLowerCase())) {
+      // Require >= 5 chars to filter acronym fragments (e.g. "SIWY" from "WYSIWYG")
+      if (normalized.length >= 5 && !seen.has(normalized.toLowerCase())) {
         seen.add(normalized.toLowerCase());
         sections.push({ title: txt, x: item.x });
       }
@@ -139,10 +157,15 @@ async function extractColors(page) {
       const args = opList.argsArray[i];
       if (!args || args.length < 3) continue;
       [r, g, b] = args;
+      // pdf-parse v2 returns 0-255 for some PDFs; normalize to 0-1
+      if (r > 1 || g > 1 || b > 1) { r /= 255; g /= 255; b /= 255; }
     } else if (fn === OPS.setFillCMYKColor || fn === OPS.setStrokeCMYKColor) {
       const args = opList.argsArray[i];
       if (!args || args.length < 4) continue;
-      [r, g, b] = cmykToRgb(args[0], args[1], args[2], args[3]);
+      let [c, m, y, k] = args;
+      // Normalize CMYK if in 0-255 range
+      if (c > 1 || m > 1 || y > 1 || k > 1) { c /= 255; m /= 255; y /= 255; k /= 255; }
+      [r, g, b] = cmykToRgb(c, m, y, k);
     } else {
       continue;
     }
@@ -198,6 +221,7 @@ async function extractDesignDNA(pdfBuffer) {
         y:        item.transform[5],
         fontName: item.fontName || '',
         pageWidth: vp.width,
+        page:     p,
       });
     }
   }
