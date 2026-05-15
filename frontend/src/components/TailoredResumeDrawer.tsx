@@ -1,4 +1,4 @@
-import { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useAnimation } from 'motion/react';
 import * as Diff from 'diff';
 import { Pencil, Check } from 'lucide-react';
@@ -205,12 +205,13 @@ function TailoredResumeDrawerInner({
     return r;
   });
 
-  const [editMode,   setEditMode]   = useState<Record<string, boolean>>({});
-  const [editValues, setEditValues] = useState<Record<string, string>>(initialEditValues ?? {});
-  const [committing, setCommitting] = useState(false);
-  const [toast,      setToast]      = useState<'success' | 'error' | null>(null);
-  const [toastMsg,   setToastMsg]   = useState('');
-  const [flashing,   setFlashing]   = useState(false);
+  const [editMode,       setEditMode]       = useState<Record<string, boolean>>({});
+  const [editValues,     setEditValues]     = useState<Record<string, string>>(initialEditValues ?? {});
+  const [committing,     setCommitting]     = useState(false);
+  const [dirtyApplying,  setDirtyApplying]  = useState(false);
+  const [toast,          setToast]          = useState<'success' | 'error' | null>(null);
+  const [toastMsg,       setToastMsg]       = useState('');
+  const [flashing,       setFlashing]       = useState(false);
   const [activeSection, setActiveSection] = useState('summary');
   const [openExperience, setOpenExperience] = useState(() => new Set([0]));
   const prevScoreRef = useRef<number | null>(null);
@@ -382,16 +383,25 @@ function TailoredResumeDrawerInner({
   const progressPct   = totalItems > 0 ? Math.min(100, Math.round((reviewedCount / totalItems) * 100)) : 0;
 
   const handleDownload = async () => {
-    const html2pdf = (await import('html2pdf.js')).default;
-    html2pdf()
-      .set({
-        margin: [12, 14, 12, 14],
-        filename: `tailored-resume-${company?.replace(/\s+/g, '-').toLowerCase() || 'job'}.pdf`,
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      })
-      .from(pdfRef.current!)
-      .save();
+    console.log('[download] parsedResume.style_config:', JSON.stringify(parsedResume?.style_config));
+    const [{ pdf }, { default: ResumePDF }] = await Promise.all([
+      import('@react-pdf/renderer'),
+      import('./ResumePDF'),
+    ]);
+    const blob = await pdf(
+      <ResumePDF
+        sections={v4Sections}
+        parsedResume={parsedResume}
+        reviews={reviews}
+        editValues={editValues}
+      />
+    ).toBlob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tailored-resume-${company?.replace(/\s+/g, '-').toLowerCase() || 'job'}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   const summaryStatus = getReview('summary');
@@ -406,6 +416,44 @@ function TailoredResumeDrawerInner({
     setEditMode(prev => ({ ...prev, [key]: false }));
     setReview(key, 'accepted');
   }
+
+  const assembleResumeText = useCallback((): string => {
+    if (!isV4) return '';
+    const lines: string[] = [];
+    for (const section of v4Sections) {
+      lines.push(section.title.toUpperCase());
+      for (const item of section.content) {
+        const rkey = `${section.title}:${item.id}`;
+        let text: string;
+        if (editValues[rkey] !== undefined) {
+          text = editValues[rkey];
+        } else if (reviews[rkey] === 'cancelled') {
+          text = item.original;
+        } else {
+          text = item.tailored;
+        }
+        if (!text.trim()) continue;
+        const isExp = /^work experience/i.test(section.title);
+        lines.push(isExp ? `• ${text}` : text);
+      }
+      lines.push('');
+    }
+    return lines.join('\n').trim();
+  }, [isV4, v4Sections, reviews, editValues]);
+
+  const handleDirtyApply = useCallback(async () => {
+    if (!job?.url) return;
+    setDirtyApplying(true);
+    onCommitWithState?.(reviews, editValues);
+    try {
+      const text = assembleResumeText();
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // clipboard permission denied — still open URL
+    }
+    window.open(job.url, '_blank', 'noopener,noreferrer');
+    setTimeout(() => setDirtyApplying(false), 1800);
+  }, [job, reviews, editValues, assembleResumeText, onCommitWithState]);
 
   const handleCommit = useCallback(async () => {
     if (!isLoggedIn) {
@@ -1157,13 +1205,39 @@ function TailoredResumeDrawerInner({
                 />
               </div>
             </div>
-            <button onClick={handleCommit} disabled={committing} aria-label="Commit tailoring" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 2, background: 'var(--moss)', color: 'var(--paper)', border: 'none', fontFamily: 'Inter', fontSize: 13, fontWeight: 600, cursor: committing ? 'wait' : 'pointer', boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)', opacity: committing ? 0.6 : 1 }}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M3 2 H11 L13 4 V13 H3 Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-                <path d="M5 2 V6 H10 V2" stroke="currentColor" strokeWidth="1.4"/>
-              </svg>
-              {committing ? 'Saving…' : 'Commit tailoring'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {isV4 && job?.url && (
+                <button
+                  onClick={handleDirtyApply}
+                  disabled={dirtyApplying}
+                  title="Copy resume text to clipboard and open job URL"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 2, background: dirtyApplying ? 'var(--washi)' : 'transparent', color: dirtyApplying ? 'var(--moss)' : 'var(--sumi-mute)', border: '1px solid var(--rule)', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, cursor: dirtyApplying ? 'default' : 'pointer', transition: 'all 200ms ease' }}>
+                  {dirtyApplying ? (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7 L6 10 L11 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Copied &amp; opening
+                    </>
+                  ) : (
+                    <>
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                        <rect x="2" y="4" width="8" height="9" rx="0" stroke="currentColor" strokeWidth="1.3"/>
+                        <path d="M5 4 V2 H12 V10 H10" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+                      </svg>
+                      Quick Apply
+                    </>
+                  )}
+                </button>
+              )}
+              <button onClick={handleCommit} disabled={committing} aria-label="Commit tailoring" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 2, background: 'var(--moss)', color: 'var(--paper)', border: 'none', fontFamily: 'Inter', fontSize: 13, fontWeight: 600, cursor: committing ? 'wait' : 'pointer', boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)', opacity: committing ? 0.6 : 1 }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 2 H11 L13 4 V13 H3 Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+                  <path d="M5 2 V6 H10 V2" stroke="currentColor" strokeWidth="1.4"/>
+                </svg>
+                {committing ? 'Saving…' : 'Commit tailoring'}
+              </button>
+            </div>
           </footer>
 
         </motion.div>

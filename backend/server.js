@@ -9,6 +9,7 @@ const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { streamTailorResume } = require('./tailorResume');
 const { clearCache } = require('./jobFetcher');
+const { extractDesignDNA } = require('./designDNA');
 
 const app = express();
 app.use(cors());
@@ -80,9 +81,15 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
   const { results_per_page } = req.query;
 
   try {
-    // Parse resume first — job search query derives from it
+    // Parse resume text + extract design DNA in parallel
     const pdfData = await pdfParse(req.file.buffer);
-    const resume = await parseResumeAI(pdfData.text);
+    const [resume, styleConfig] = await Promise.all([
+      parseResumeAI(pdfData.text),
+      extractDesignDNA(req.file.buffer).catch(err => {
+        console.warn('[designDNA] extraction failed (non-fatal):', err.message);
+        return null;
+      }),
+    ]);
 
     const titles = resume.all_job_titles?.length
       ? resume.all_job_titles
@@ -130,7 +137,13 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
     console.log('Successfully parsed jobs:', resume.experience.map(e => e.title));
     console.log('[postedAt sample]', rankedWithDates.slice(0, 3).map(j => ({ title: j.job_title, postedAt: j.postedAt })));
 
+    console.log('[designDNA] result:', JSON.stringify(styleConfig));
+
     res.json({
+      resume_full_name: resume.full_name || '',
+      resume_contact_line: resume.contact_line || '',
+      resume_summary_section_title: resume.summary_section_title || '',
+      resume_summary: resume.summary || '',
       resume_skills: resume.skills,
       most_recent_job_title: resume.most_recent_job_title,
       all_job_titles: resume.all_job_titles,
@@ -138,7 +151,9 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       resume_city: resume.city || '',
       resume_province: resume.province || '',
       resume_experience: resume.experience,
-      resume_projects: resume.projects || [],
+      resume_projects:   resume.projects   || [],
+      resume_education:  resume.education  || [],
+      style_config: styleConfig,
       search_query_used: searchQueryUsed,
       count: rankedWithDates.length,
       jobs: rankedWithDates,

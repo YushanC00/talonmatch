@@ -12,6 +12,10 @@ CRITICAL: You MUST extract EVERY SINGLE job in the document. Read the ENTIRE tex
 
 Return ONLY this JSON — no markdown, no extra keys:
 {
+  "full_name": "Candidate full name or empty string",
+  "contact_line": "Email / phone / LinkedIn / location on one line, or empty string",
+  "summary_section_title": "Exact heading used for the profile/summary section (e.g. 'Professional Profile', 'Summary', 'About', 'Objective') or empty string if none",
+  "summary": "Full text of the profile/summary/about section, or empty string if none",
   "skills": ["skill1", "skill2"],
   "location": "City, Province/State or empty string",
   "city": "City name only or empty string",
@@ -63,6 +67,10 @@ async function parseResumeAI(rawText) {
   }
 
   return {
+    full_name:             parsed.full_name             || '',
+    contact_line:          parsed.contact_line          || '',
+    summary_section_title: parsed.summary_section_title || '',
+    summary:               parsed.summary               || '',
     skills: parsed.skills || [],
     location: parsed.location || '',
     city: parsed.city || '',

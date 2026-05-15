@@ -13,6 +13,8 @@ const DYNAMIC_SYSTEM = `ATS resume writer. Tailor candidate resume to JD. Return
 
 INTEGRITY (non-negotiable):
 • Never invent metrics, dates, skills, or companies not in source text
+• TECHNOLOGY LOCK: Only name tools/languages/frameworks that appear in CANDIDATE RESUME skills or experience. If JD mentions C++, Go, Rust, etc. but candidate resume does not — NEVER write those in tailored output. This applies to every section including Summary.
+• EXPERIENCE LOCK: Never write "X years of Y" unless both X and Y come verbatim from candidate resume. Do not derive years from the JD.
 • If JD requires more experience than candidate has: qualitative framing, never fabricate years
 • Copy bullet verbatim into tailored if no meaningful improvement fits
 • Match seniority — never upgrade title tier (junior stays junior)
@@ -30,11 +32,12 @@ Work Experience label = "Role @ Company (Period)" on every item.
 
 Each section gets ONE rationale field (max 12 words explaining JD alignment).
 Each content item gets a rationale field (max 8 words, WHY this change matches JD; empty string if tailored equals original).
-Output Summary section FIRST so the frontend can render immediately.
+Output the profile/summary section FIRST so the frontend can render immediately.
 Include ONLY sections present in the source resume.
+SECTION TITLE LOCK: Use the EXACT section title from the source resume. If source says "Professional Profile", output title "Professional Profile". Never rename sections.
 
 OUTPUT FORMAT:
-{"_version":4,"sections":[{"title":"Summary","rationale":"<12w>","content":[{"id":"summary-0","label":"","original":"...","tailored":"...","rationale":"<8w or empty>"}]},{"title":"Work Experience","rationale":"<12w>","content":[{"id":"we-acme-0","label":"Sr Engineer @ Acme (2021–Now)","original":"Built API...","tailored":"Designed high-throughput API...","rationale":"highlights distributed systems expertise"}]},{"title":"Skills","rationale":"<12w>","content":[{"id":"skills-hard-0","label":"Technical","original":"React, TS...","tailored":"React, TS...","rationale":""}]}]}`;
+{"_version":4,"sections":[{"title":"<exact source section title>","rationale":"<12w>","content":[{"id":"summary-0","label":"","original":"...","tailored":"...","rationale":"<8w or empty>"}]},{"title":"Work Experience","rationale":"<12w>","content":[{"id":"we-acme-0","label":"Sr Engineer @ Acme (2021–Now)","original":"Built API...","tailored":"Designed high-throughput API...","rationale":"highlights distributed systems expertise"}]},{"title":"Skills","rationale":"<12w>","content":[{"id":"skills-hard-0","label":"Technical","original":"React, TS...","tailored":"React, TS...","rationale":""}]}]}`;
 
 // ── JD context stripping ───────────────────────────────────────────────────────
 
@@ -72,10 +75,18 @@ function buildUserMessage({ parsedResume, jobDescription }) {
   const lines = [];
   const cleanedJd = stripJdNoise(jobDescription).slice(0, 1800);
   lines.push(`JOB DESCRIPTION:\n${cleanedJd}\n`);
+
+  // Pass original section titles so AI preserves them exactly
+  const originalSections = parsedResume.style_config?.sections;
+  if (originalSections?.length) {
+    lines.push(`ORIGINAL SECTION TITLES (use these exactly): ${originalSections.join(', ')}`);
+  }
+
   lines.push('CANDIDATE RESUME:');
 
   if (parsedResume.summary) {
-    lines.push('\n=== Summary ===');
+    const summaryTitle = parsedResume.summary_section_title || 'Summary';
+    lines.push(`\n=== ${summaryTitle} ===`);
     lines.push(parsedResume.summary);
   }
 
@@ -106,15 +117,17 @@ function buildUserMessage({ parsedResume, jobDescription }) {
 
   const skills = parsedResume.skills || [];
   if (skills.length > 0) {
-    lines.push('\n=== Skills ===');
+    const skillsTitle = originalSections?.find(s => /skills|tech|stack|tool/i.test(s)) || 'Skills';
+    lines.push(`\n=== ${skillsTitle} ===`);
     lines.push(skills.join(', '));
   }
 
   const education = parsedResume.education || [];
   if (education.length > 0) {
-    lines.push('\n=== Education ===');
+    const eduTitle = originalSections?.find(s => /edu/i.test(s)) || 'Education';
+    lines.push(`\n=== ${eduTitle} ===`);
     for (const edu of education) {
-      lines.push(`${edu.degree || ''} — ${edu.institution || ''} (${edu.year || ''})`);
+      lines.push(`${edu.degree || ''} — ${edu.institution || edu.school || ''} (${edu.year || ''})`);
     }
   }
 
@@ -149,6 +162,32 @@ function getRawResumeText(parsedResume) {
     if (proj.description) parts.push(proj.description);
   }
   return parts.join(' ');
+}
+
+function buildCandidateSkillSet(parsedResume) {
+  const rawText = getRawResumeText(parsedResume).toLowerCase();
+  const set = new Set();
+  for (const s of (parsedResume.skills || [])) {
+    set.add(s.toLowerCase().trim());
+  }
+  // Also extract capitalised/acronym tech tokens from raw resume text
+  const techTokens = rawText.match(/\b[a-z][a-z0-9+#./]{1,}\b/g) || [];
+  for (const t of techTokens) set.add(t);
+  return set;
+}
+
+// Strip "N+ years of <tech>" claims where <tech> is not in candidate resume
+function stripHallucinatedSkillClaims(text, candidateSkillSet) {
+  return text.replace(
+    /\b(\d+\+?\s+years?\s+(?:of\s+)?)([\w+#./]+(?:\s+[\w+#./]+){0,2})\s+(experience|expertise|development|programming|background)\b/gi,
+    (match, prefix, techPhrase, _suffix) => {
+      const normalized = techPhrase.toLowerCase().trim();
+      // Check each word in techPhrase against skill set
+      const words = normalized.split(/\s+/);
+      const allKnown = words.every(w => candidateSkillSet.has(w) || w.length <= 2);
+      return allKnown ? match : '';
+    }
+  ).replace(/\s{2,}/g, ' ').replace(/\s+([,;.])/g, '$1').trim();
 }
 
 function stripHallucinatedMetrics(text, rawText) {
@@ -280,17 +319,22 @@ class SectionStreamParser {
 
 function normalizeSectionItem(raw, parsedResume) {
   if (!raw?.title) return null;
-  const rawText = getRawResumeText(parsedResume);
-  const isExp   = /experience/i.test(raw.title);
-  const content = (raw.content || []).map(item => ({
-    id:       item.id       || '',
-    label:    item.label    || '',
-    original: item.original || '',
-    tailored: isExp
-      ? truncateItem(stripHallucinatedMetrics(item.tailored || '', rawText))
-      : stripHallucinatedMetrics(item.tailored || '', rawText),
-    rationale: (item.rationale || '').trim().slice(0, 80),
-  })).filter(item => item.id);
+  const rawText        = getRawResumeText(parsedResume);
+  const candidateSkills = buildCandidateSkillSet(parsedResume);
+  const isExp          = /experience/i.test(raw.title);
+  const content = (raw.content || []).map(item => {
+    let tailored = item.tailored || '';
+    tailored = stripHallucinatedSkillClaims(tailored, candidateSkills);
+    tailored = stripHallucinatedMetrics(tailored, rawText);
+    if (isExp) tailored = truncateItem(tailored);
+    return {
+      id:        item.id       || '',
+      label:     item.label    || '',
+      original:  item.original || '',
+      tailored,
+      rationale: (item.rationale || '').trim().slice(0, 80),
+    };
+  }).filter(item => item.id);
   if (!content.length) return null;
   return {
     title:     raw.title,
@@ -387,7 +431,8 @@ module.exports = {
   tailorResume, streamTailorResume, validateSuggestionAST,
   // pure utilities — exported for unit testing
   buildUserMessage, getRawResumeText,
-  stripHallucinatedMetrics, truncateItem, truncateRationale,
+  stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
+  truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,
   _resetClientForTesting: () => { _client = null; },
 };

@@ -19,7 +19,8 @@ jest.mock('groq-sdk', () => {
 const {
   tailorResume, streamTailorResume, validateSuggestionAST, _resetClientForTesting,
   buildUserMessage, getRawResumeText,
-  stripHallucinatedMetrics, truncateItem, truncateRationale,
+  stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
+  truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,
 } = require('../tailorResume');
 
@@ -658,5 +659,65 @@ describe('streamTailorResume — branch coverage', () => {
     const summary = result.sections.find(s => s.title === 'Summary');
     expect(summary.content[0].rationale.length).toBeLessThanOrEqual(80);
     expect(summary.content[1].rationale).toBe('');
+  });
+});
+
+// ── stripHallucinatedSkillClaims ─────────────────────────────────────────────
+
+describe('stripHallucinatedSkillClaims', () => {
+  const skillSet = new Set(['react', 'typescript', 'node.js', 'javascript', '5']);
+
+  it('removes "N years of <unknown skill>" claim', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Results-driven engineer with 8+ years of C++ development experience.',
+      skillSet
+    );
+    expect(result).not.toMatch(/C\+\+/);
+    expect(result).not.toMatch(/8\+/);
+  });
+
+  it('preserves "N years of <known skill>" claim', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Engineer with 5 years of React experience.',
+      skillSet
+    );
+    expect(result).toContain('5 years of React experience');
+  });
+
+  it('removes fabricated multi-word tech phrase', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Brings 10+ years of systems programming background.',
+      skillSet
+    );
+    expect(result).not.toMatch(/10\+/);
+  });
+
+  it('leaves text unchanged when no years-of-skill pattern present', () => {
+    const text = 'Built scalable React applications with TypeScript.';
+    expect(stripHallucinatedSkillClaims(text, skillSet)).toBe(text);
+  });
+});
+
+// ── buildCandidateSkillSet ───────────────────────────────────────────────────
+
+describe('buildCandidateSkillSet', () => {
+  it('includes explicit skills', () => {
+    const set = buildCandidateSkillSet({ skills: ['React', 'TypeScript'], experience: [] });
+    expect(set.has('react')).toBe(true);
+    expect(set.has('typescript')).toBe(true);
+  });
+
+  it('does NOT include skills not in resume', () => {
+    const set = buildCandidateSkillSet({ skills: ['React'], experience: [] });
+    expect(set.has('c++')).toBe(false);
+  });
+
+  it('extracts tech tokens from experience bullets', () => {
+    const resume = {
+      skills: [],
+      experience: [{ title: 'Dev', company: 'Acme', period: '2020', bullets: ['Built with Kubernetes.'] }],
+    };
+    const set = buildCandidateSkillSet(resume);
+    expect(set.has('kubernetes')).toBe(true);
   });
 });
