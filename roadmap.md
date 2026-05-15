@@ -21,9 +21,10 @@ _Focus: Data accuracy and core tailoring logic._
 - [x] **Concentric Search Fallback:** Auto-expand search to Province/State if local results < 5.
 - [x] **Application Persistence:** Supabase `applications` table to store tailored resumes.
 - [x] **Cache Management:** Manual "Clear Cache" trigger for job data refresh.
-- [ ] **Full-Resume Tailoring:** single-pass structured JSON for all sections (Summary, Exp, Projects).
-- [ ] **Live Match Score:** Animate Match % in the drawer header as edits are accepted.
-- [ ] **UX Polish:** Fix "Remote" bookmark clipping; remove redundant header company info.
+- [x] **Full-Resume Tailoring:** single-pass structured JSON for all sections (dynamically based on the resume).
+- [x] **Live Match Score:** Animate Match % in the drawer header as edits are accepted.
+- [x] **UX Polish:** missing salary range on the cards if any.
+- [x] **UX Polish:** allow user to edit the resume after tailored.
 
 ---
 

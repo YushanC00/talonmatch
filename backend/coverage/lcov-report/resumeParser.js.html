@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.43% </span>
+                <span class="strong">98.41% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>126/128</span>
+                <span class='fraction'>124/126</span>
             </div>
         
             
@@ -39,14 +39,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>19/19</span>
+                <span class='fraction'>18/18</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>106/106</span>
+                <span class='fraction'>105/105</span>
             </div>
         
             
@@ -308,8 +308,7 @@
 <a name='L243'></a><a href='#L243'>243</a>
 <a name='L244'></a><a href='#L244'>244</a>
 <a name='L245'></a><a href='#L245'>245</a>
-<a name='L246'></a><a href='#L246'>246</a>
-<a name='L247'></a><a href='#L247'>247</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L246'></a><a href='#L246'>246</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -529,7 +528,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">8x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
@@ -585,7 +583,7 @@ const SKILL_VOCAB = [
 &nbsp;
 const DATE_PATTERN = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}|\b(19|20)\d{2}\b/i;
 const SECTION_HEADERS = /^(skills|technical skills|core competencies|technologies|tools|expertise|experience|work experience|employment|professional experience|education|academic|qualifications)/i;
-const JOB_TITLE_SEPARATORS = /\s*[\/\|–\-]\s*(?=\w)/;
+const JOB_TITLE_SEPARATORS = /\s*[/|–-]\s*(?=\w)/;
 &nbsp;
 // Strip HTML tags that some PDF extractors leave behind
 function cleanText(text) {
@@ -628,7 +626,7 @@ function extractLocation(lines) {
     const lower = line.toLowerCase();
 &nbsp;
     // "City, Province/State" or "City, Province/State, Country"
-    const commaMatch = line.match(/^([A-Za-z\s\.\-]+),\s*([A-Za-z]{2,}(?:,\s*[A-Za-z\s]+)?)$/);
+    const commaMatch = line.match(/^([A-Za-z\s.-]+),\s*([A-Za-z]{2,}(?:,\s*[A-Za-z\s]+)?)$/);
     if (commaMatch) {
       const parts = commaMatch[0].split(',').map(s =&gt; s.trim());
       const region = parts[1]?.toLowerCase().replace(/\.$/, '');
@@ -664,14 +662,14 @@ function parseJobTitle(line) {
   const parts = title.split(JOB_TITLE_SEPARATORS);
   title = parts[0].trim();
   // Drop trailing punctuation
-  return title.replace(/[,\.\|\/–\-]+$/, '').trim();
+  return title.replace(/[,.|/–-]+$/, '').trim();
 }
 &nbsp;
 const JOB_ROLE_KEYWORDS = /\b(manager|director|designer|engineer|developer|analyst|architect|coordinator|specialist|consultant|executive|officer|president|vp|head|principal|lead|strategist|researcher|scientist|producer|founder|cto|ceo|coo|cpo|owner|associate|intern|staff|technician|writer|editor|illustrator|contractor|freelancer|advisor|partner)\b/i;
 // Only reject when suffix is the primary word — require it near end of a short line
 const COMPANY_SUFFIXES  = /\b(inc\.?|ltd\.?|llc\.?|corp\.?|gmbh|plc)\b/i;
 const LOCATION_LINE     = /\b(canada|usa|uk|australia|remote)\b|,\s*(bc|on|ab|qc|ca|ny|wa|tx)\b/i;
-const BULLET_LINE       = /^[•●▪–—●•\-\*]\s*/;
+const BULLET_LINE       = /^[-•●▪–—●•*]\s*/;
 // Catch action-verb sentences — "Led a team", "Lead a cross-functional..." but NOT "Tech Lead"
 const SENTENCE_STARTERS = /^(led|managed|built|designed|developed|worked|created|drove|owned|improved|launched|partnered|oversaw|delivered|implemented|maintained|increased|reduced|lead\s+a|lead\s+the|lead\s+cross|lead\s+multiple)/i;
 &nbsp;
@@ -709,7 +707,7 @@ function extractExperience(lines) {
   }
   if (current) entries.push(current);
 &nbsp;
-  return entries.map(({ raw_header, title, description }) =&gt; ({ title, description }));
+  return entries.map(({ title, description }) =&gt; ({ title, description }));
 }
 &nbsp;
 function extractEducation(lines) {
@@ -723,7 +721,7 @@ function extractEducation(lines) {
     if (isDegree || isInstitution) {
       <span class="missing-if-branch" title="if path not taken" >I</span>if (current) <span class="cstat-no" title="statement not covered" >entries.push(current);</span>
       const yearMatch = line.match(/\b(19|20)\d{2}\b/);
-      const degreeMatch = line.match(/\b(bachelor[^\,\.]*|master[^\,\.]*|phd[^\,\.]*|b\.?s\.?[^\,\.\ ]*|m\.?s\.?[^\,\.\ ]*|mba[^\,\.]*)/i);
+      const degreeMatch = line.match(/\b(bachelor[^,.]*|master[^,.]*|phd[^,.]*|b\.?s\.?[^,. ]*|m\.?s\.?[^,. ]*|mba[^,.]*)/i);
       current = {
         institution: line,
         degree: degreeMatch?.[0]?.trim() || '',
@@ -775,7 +773,6 @@ function parseResume(rawText) {
 &nbsp;
   const most_recent_job_title = all_job_titles[0] || <span class="branch-1 cbranch-no" title="branch not covered" >'';</span>
 &nbsp;
-  const skillSet = new Set(vocabSkills.map(s =&gt; s.toLowerCase()));
   const skills = vocabSkills;
 &nbsp;
   const location = extractLocation(lines);
@@ -808,7 +805,7 @@ module.exports = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-14T02:44:38.019Z
+                at 2026-05-14T21:34:49.771Z
             </div>
         <script src="prettify.js"></script>
         <script>

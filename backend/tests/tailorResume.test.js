@@ -17,9 +17,10 @@ jest.mock('groq-sdk', () => {
 
 // Load after mock is set up
 const {
-  tailorResume, validateSuggestionAST, _resetClientForTesting,
+  tailorResume, streamTailorResume, validateSuggestionAST, _resetClientForTesting,
   buildUserMessage, getRawResumeText,
-  stripHallucinatedMetrics, truncateItem, truncateRationale,
+  stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
+  truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,
 } = require('../tailorResume');
 
@@ -518,5 +519,205 @@ describe('scoreTailoredResult', () => {
     const result = { sections: [{ title: 'Summary', content: [{ id: 's-0', tailored }] }] };
     const { score } = scoreTailoredResult(result, tailored, manyKw);
     expect(score).toBe(100); // Summary not penalised for keyword density
+  });
+});
+
+// ── buildUserMessage — JD noise stripping ──────────────────────────────────
+
+describe('buildUserMessage — JD noise stripping', () => {
+  it('strips About Us section from JD before including it', () => {
+    // Single newline after header — regex captures entire paragraph before the next blank line
+    const jd = 'About us\nWe are a great company building things.\n\nRequirements\nReact and Node.js skills needed.';
+    const msg = buildUserMessage({ parsedResume: {}, jobDescription: jd });
+    expect(msg).not.toContain('We are a great company');
+    expect(msg).toContain('React and Node.js');
+  });
+
+  it('strips Benefits section from JD', () => {
+    const jd = 'Requirements\nReact skills needed.\n\nBenefits\nHealth insurance. 401k. PTO.';
+    const msg = buildUserMessage({ parsedResume: {}, jobDescription: jd });
+    expect(msg).not.toContain('Health insurance');
+    expect(msg).toContain('React skills needed');
+  });
+
+  it('strips EEO boilerplate from JD', () => {
+    const jd = 'Requirements\nStrong engineer needed.\n\nEqual employment opportunity employer. We do not discriminate.';
+    const msg = buildUserMessage({ parsedResume: {}, jobDescription: jd });
+    expect(msg).not.toContain('do not discriminate');
+    expect(msg).toContain('Strong engineer');
+  });
+});
+
+// ── streamTailorResume — branch coverage ───────────────────────────────────
+
+describe('streamTailorResume — branch coverage', () => {
+  beforeEach(() => {
+    _resetClientForTesting();
+    Groq.mockClear();
+  });
+
+  it('passes signal to Groq create when provided', async () => {
+    const section = { title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: 'Dev.', tailored: 'React dev.' }] };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
+
+    let capturedOptions;
+    Groq.mockImplementationOnce(() => ({
+      chat: {
+        completions: {
+          create: jest.fn().mockImplementation(async (_params, options) => {
+            capturedOptions = options;
+            return makeStream([fullJson]);
+          }),
+        },
+      },
+    }));
+
+    const ac = new AbortController();
+    const events = [];
+    for await (const event of streamTailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION, signal: ac.signal })) {
+      events.push(event);
+    }
+
+    expect(capturedOptions).toEqual({ signal: ac.signal });
+    expect(events.some(e => e.type === 'done')).toBe(true);
+  });
+
+  it('skips sections where normalizeSectionItem returns null (no title)', async () => {
+    const noTitle = { rationale: 'test', content: [{ id: 'x-0', label: '', original: 'A', tailored: 'B' }] };
+    const valid   = { title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: 'Dev.', tailored: 'Dev.' }] };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(noTitle)},${JSON.stringify(valid)}]}`;
+
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION });
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0].title).toBe('Summary');
+  });
+
+  it('skips sections where all content items lack id', async () => {
+    const noId   = { title: 'Summary', rationale: '', content: [{ label: '', original: 'A', tailored: 'B' }] }; // no id
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(noId)}]}`;
+
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION });
+    expect(result.sections).toHaveLength(0);
+  });
+
+  it('does not truncate non-Experience section content', async () => {
+    // Summary section — isExp = false → no truncateItem applied
+    const longText = 'A'.repeat(210);
+    const section = { title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: 'Dev.', tailored: longText }] };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
+
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION });
+    const summary = result.sections.find(s => s.title === 'Summary');
+    // Summary bullets not truncated — length preserved
+    expect(summary.content[0].tailored.length).toBeGreaterThan(200);
+  });
+
+  it('passes per-item rationale through content items', async () => {
+    const section = {
+      title: 'Work Experience', rationale: 'Strong frontend fit',
+      content: [{ id: 'we-acme-0', label: 'Dev @ Acme (2020–Now)', original: 'Built API.', tailored: 'Built scalable API.', rationale: 'highlights scalability' }],
+    };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
+
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION });
+    const we = result.sections.find(s => s.title === 'Work Experience');
+    expect(we.content[0].rationale).toBe('highlights scalability');
+  });
+
+  it('caps per-item rationale at 80 chars and defaults to empty string', async () => {
+    const longRationale = 'x'.repeat(100);
+    const section = {
+      title: 'Summary', rationale: '',
+      content: [
+        { id: 'summary-0', label: '', original: 'Dev.', tailored: 'Dev.', rationale: longRationale },
+        { id: 'summary-1', label: '', original: 'Dev.', tailored: 'Dev.' }, // no rationale field
+      ],
+    };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
+
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorResume({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION });
+    const summary = result.sections.find(s => s.title === 'Summary');
+    expect(summary.content[0].rationale.length).toBeLessThanOrEqual(80);
+    expect(summary.content[1].rationale).toBe('');
+  });
+});
+
+// ── stripHallucinatedSkillClaims ─────────────────────────────────────────────
+
+describe('stripHallucinatedSkillClaims', () => {
+  const skillSet = new Set(['react', 'typescript', 'node.js', 'javascript', '5']);
+
+  it('removes "N years of <unknown skill>" claim', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Results-driven engineer with 8+ years of C++ development experience.',
+      skillSet
+    );
+    expect(result).not.toMatch(/C\+\+/);
+    expect(result).not.toMatch(/8\+/);
+  });
+
+  it('preserves "N years of <known skill>" claim', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Engineer with 5 years of React experience.',
+      skillSet
+    );
+    expect(result).toContain('5 years of React experience');
+  });
+
+  it('removes fabricated multi-word tech phrase', () => {
+    const result = stripHallucinatedSkillClaims(
+      'Brings 10+ years of systems programming background.',
+      skillSet
+    );
+    expect(result).not.toMatch(/10\+/);
+  });
+
+  it('leaves text unchanged when no years-of-skill pattern present', () => {
+    const text = 'Built scalable React applications with TypeScript.';
+    expect(stripHallucinatedSkillClaims(text, skillSet)).toBe(text);
+  });
+});
+
+// ── buildCandidateSkillSet ───────────────────────────────────────────────────
+
+describe('buildCandidateSkillSet', () => {
+  it('includes explicit skills', () => {
+    const set = buildCandidateSkillSet({ skills: ['React', 'TypeScript'], experience: [] });
+    expect(set.has('react')).toBe(true);
+    expect(set.has('typescript')).toBe(true);
+  });
+
+  it('does NOT include skills not in resume', () => {
+    const set = buildCandidateSkillSet({ skills: ['React'], experience: [] });
+    expect(set.has('c++')).toBe(false);
+  });
+
+  it('extracts tech tokens from experience bullets', () => {
+    const resume = {
+      skills: [],
+      experience: [{ title: 'Dev', company: 'Acme', period: '2020', bullets: ['Built with Kubernetes.'] }],
+    };
+    const set = buildCandidateSkillSet(resume);
+    expect(set.has('kubernetes')).toBe(true);
   });
 });

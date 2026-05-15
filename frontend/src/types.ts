@@ -1,3 +1,17 @@
+// ── Design DNA ────────────────────────────────────────────────────────────────
+
+export interface StyleConfig {
+  fontSize: { body: number; heading: number; name: number }
+  fontProfile: 'serif' | 'sans-serif' | 'monospace' | 'mixed' | 'unknown'
+  fontNames: string[]
+  hasBoldFont: boolean
+  layout: { columns: 1 | 2; marginLeft: number; pageWidth: number; headerAlign?: 'left' | 'center' }
+  bullets: string
+  sections: string[]
+  sectionColumns: { left: string[]; right: string[] }
+  accentColor: string | null
+}
+
 // ── Resume types ───────────────────────────────────────────────────────────────
 
 export interface WorkExperience {
@@ -20,15 +34,19 @@ export interface Education {
 }
 
 export interface ParsedResume {
+  full_name?: string
+  contact_line?: string
+  summary_section_title?: string
+  summary?: string
   skills: string[]
   experience: WorkExperience[]
   projects?: Project[]
   education?: Education[]
-  summary?: string
   city?: string
   province?: string
   country?: string
   most_recent_job_title?: string
+  style_config?: StyleConfig | null
 }
 
 // ── Job types ──────────────────────────────────────────────────────────────────
@@ -56,6 +74,7 @@ export interface TailoredContentItem {
   label: string
   original: string
   tailored: string
+  rationale?: string
 }
 
 export interface TailoredSection {

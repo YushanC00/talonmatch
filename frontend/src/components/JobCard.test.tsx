@@ -180,20 +180,20 @@ describe('JobCard — Tailored ghost badge', () => {
 });
 
 describe('JobCard — Tailored action buttons', () => {
-  it('shows "Ready to Apply" link when tailored', () => {
+  it('shows "Apply" button when tailored and url present', () => {
     render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={true} />);
-    expect(screen.getByText(/ready to apply/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /apply/i })).toBeInTheDocument();
   });
 
   it('hides tailored buttons when not tailored', () => {
     render(<JobCard job={baseJob} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={false} />);
-    expect(screen.queryByText(/ready to apply/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /apply/i })).not.toBeInTheDocument();
   });
 
-  it('hides "Ready to Apply" link when url is empty', () => {
+  it('hides "Apply" link when url is empty', () => {
     const job = { ...baseJob, url: '' };
     render(<JobCard job={job} parsedResume={parsedResume} onViewDetails={vi.fn()} isTailored={true} />);
-    expect(screen.queryByText(/ready to apply/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /apply/i })).not.toBeInTheDocument();
   });
 });
 

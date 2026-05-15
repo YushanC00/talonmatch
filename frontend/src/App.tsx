@@ -369,11 +369,17 @@ export default function App() {
       setResults(data);
 
       const resumeJson: ParsedResume = {
-        skills:     data.resume_skills     || [],
-        experience: data.resume_experience || [],
-        projects:   (data['resume_projects'] as ParsedResume['projects'])   || [],
-        city:       (data['resume_city']    as string)                      || '',
-        province:   (data['resume_province'] as string)                     || '',
+        full_name:              (data['resume_full_name']             as string) || '',
+        contact_line:           (data['resume_contact_line']          as string) || '',
+        summary_section_title:  (data['resume_summary_section_title'] as string) || '',
+        summary:                (data['resume_summary']               as string) || '',
+        skills:        data.resume_skills     || [],
+        experience:    data.resume_experience || [],
+        projects:      (data['resume_projects']  as ParsedResume['projects'])  || [],
+        education:     (data['resume_education'] as ParsedResume['education']) || [],
+        city:          (data['resume_city']    as string)                      || '',
+        province:      (data['resume_province'] as string)                     || '',
+        style_config:  (data['style_config'] as ParsedResume['style_config'])  ?? null,
       };
       setParsedResume(resumeJson);
       setResumeFetched(true); // no need to re-fetch; we just set it
