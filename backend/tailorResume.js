@@ -90,8 +90,31 @@ function splitDescription(description) {
     .filter(s => s.length > 10);
 }
 
-function buildUserMessage({ parsedResume, jobDescription }) {
+function buildFewShotBlock(preferences) {
+  if (!preferences?.length) return null;
+  const accepted = preferences
+    .filter(p => p.decision === 'accepted' && p.original !== p.tailored)
+    .slice(0, 5);
+  const rejected = preferences
+    .filter(p => p.decision === 'rejected' && p.original !== p.tailored)
+    .slice(0, 3);
+  if (!accepted.length && !rejected.length) return null;
+  const lines = ['WRITING PREFERENCES — match my past accepted phrasings and avoid rejected ones:'];
+  if (accepted.length) {
+    lines.push('\n✓ APPROVED — write bullets like these:');
+    for (const p of accepted) lines.push(`  • "${p.original}" → "${p.tailored}"`);
+  }
+  if (rejected.length) {
+    lines.push('\n✗ AVOID — I rejected these phrasings:');
+    for (const p of rejected) lines.push(`  • "${p.tailored}"`);
+  }
+  return lines.join('\n');
+}
+
+function buildUserMessage({ parsedResume, jobDescription, preferences }) {
   const lines = [];
+  const fewShot = buildFewShotBlock(preferences);
+  if (fewShot) lines.push(fewShot + '\n');
   const cleanedJd = stripJdNoise(jobDescription).slice(0, 1800);
   lines.push(`JOB DESCRIPTION:\n${cleanedJd}\n`);
 
@@ -368,12 +391,12 @@ function normalizeSectionItem(raw, parsedResume) {
 
 // ── Streaming public API ───────────────────────────────────────────────────────
 
-async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
+async function* streamTailorResume({ parsedResume, jobDescription, preferences, signal }) {
   const expCount  = (parsedResume.experience || []).length;
   const projCount = (parsedResume.projects   || []).length;
-  console.log(`Tailor v6 streaming | exp:${expCount} proj:${projCount}`);
+  console.log(`Tailor v6 streaming | exp:${expCount} proj:${projCount} | prefs:${preferences?.length ?? 0}`);
 
-  const userMessage = buildUserMessage({ parsedResume, jobDescription });
+  const userMessage = buildUserMessage({ parsedResume, jobDescription, preferences });
   const parser = new SectionStreamParser();
   let usage = null;
 
@@ -526,7 +549,7 @@ function validateSuggestionAST(suggestion) {
 module.exports = {
   tailorResume, streamTailorResume, validateSuggestionAST,
   // pure utilities — exported for unit testing
-  buildUserMessage, getRawResumeText,
+  buildUserMessage, buildFewShotBlock, getRawResumeText,
   stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
   truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,

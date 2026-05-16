@@ -321,7 +321,7 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
 });
 
 app.post('/api/tailor-resume', async (req, res) => {
-  const { parsed_resume, job_description } = req.body;
+  const { parsed_resume, job_description, preferences } = req.body;
 
   console.log('[tailor] req | exp:', parsed_resume?.experience?.length ?? 0, '| proj:', parsed_resume?.projects?.length ?? 0, '| skills:', parsed_resume?.skills?.length ?? 0);
 
@@ -361,6 +361,7 @@ app.post('/api/tailor-resume', async (req, res) => {
     for await (const event of streamTailorResume({
       parsedResume:   parsed_resume,
       jobDescription: job_description,
+      preferences:    Array.isArray(preferences) ? preferences : undefined,
       signal:         ac.signal,
     })) {
       if (res.writableEnded || ac.signal.aborted) break;

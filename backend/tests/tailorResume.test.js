@@ -473,6 +473,74 @@ describe('buildUserMessage', () => {
   });
 });
 
+// ── buildUserMessage — few-shot preferences injection ─────────────────────────
+
+describe('buildUserMessage — preferences injection', () => {
+  const BASE = { parsedResume: { summary: 'Dev.' }, jobDescription: 'React Engineer role.' };
+
+  it('omits preferences block when no preferences supplied', () => {
+    const msg = buildUserMessage(BASE);
+    expect(msg).not.toContain('WRITING PREFERENCES');
+  });
+
+  it('omits preferences block when empty array', () => {
+    const msg = buildUserMessage({ ...BASE, preferences: [] });
+    expect(msg).not.toContain('WRITING PREFERENCES');
+  });
+
+  it('includes approved examples from accepted entries', () => {
+    const preferences = [
+      { decision: 'accepted', original: 'Helped build APIs.', tailored: 'Designed RESTful APIs.' },
+    ];
+    const msg = buildUserMessage({ ...BASE, preferences });
+    expect(msg).toContain('WRITING PREFERENCES');
+    expect(msg).toContain('Helped build APIs.');
+    expect(msg).toContain('Designed RESTful APIs.');
+  });
+
+  it('includes avoid section from rejected entries', () => {
+    const preferences = [
+      { decision: 'rejected', original: 'Led the team.', tailored: 'Spearheaded synergy.' },
+    ];
+    const msg = buildUserMessage({ ...BASE, preferences });
+    expect(msg).toContain('WRITING PREFERENCES');
+    expect(msg).toContain('Spearheaded synergy.');
+  });
+
+  it('skips no-op entries where original equals tailored', () => {
+    const preferences = [
+      { decision: 'accepted', original: 'Same text.', tailored: 'Same text.' },
+    ];
+    const msg = buildUserMessage({ ...BASE, preferences });
+    expect(msg).not.toContain('WRITING PREFERENCES');
+  });
+
+  it('caps accepted examples at 5 and rejected at 3', () => {
+    const preferences = [
+      ...Array.from({ length: 8 }, (_, i) => ({
+        decision: 'accepted', original: `orig-acc-${i}`, tailored: `tailored-acc-${i}`,
+      })),
+      ...Array.from({ length: 6 }, (_, i) => ({
+        decision: 'rejected', original: `orig-rej-${i}`, tailored: `tailored-rej-${i}`,
+      })),
+    ];
+    const msg = buildUserMessage({ ...BASE, preferences });
+    // Count occurrences via unique markers
+    const accCount = (msg.match(/tailored-acc-/g) || []).length;
+    const rejCount = (msg.match(/tailored-rej-/g) || []).length;
+    expect(accCount).toBe(5);
+    expect(rejCount).toBe(3);
+  });
+
+  it('preferences block appears before JD text', () => {
+    const preferences = [
+      { decision: 'accepted', original: 'Old bullet.', tailored: 'New bullet.' },
+    ];
+    const msg = buildUserMessage({ ...BASE, preferences });
+    expect(msg.indexOf('WRITING PREFERENCES')).toBeLessThan(msg.indexOf('JOB DESCRIPTION'));
+  });
+});
+
 // ── scoreTailoredResult ────────────────────────────────────────────────────────
 
 describe('scoreTailoredResult', () => {

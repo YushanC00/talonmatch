@@ -3,6 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
 import TailoredResumeDrawer from '../components/TailoredResumeDrawer';
 import type { Job, ParsedResume, TailoredResume, TailoredSection, NarrativeInsight } from '../types';
+import { getTelemetry } from '../utils/telemetry';
+import { supabase } from '../lib/supabase';
+import { pushToDb } from '../lib/telemetrySync';
 
 interface TailorPageProps {
   parsedResume: ParsedResume;
@@ -120,12 +123,19 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
 
     (async () => {
       try {
+        const allEntries = getTelemetry();
+        const preferences = [
+          ...allEntries.filter(e => e.decision === 'accepted' && e.original !== e.tailored).slice(-5),
+          ...allEntries.filter(e => e.decision === 'rejected' && e.original !== e.tailored).slice(-3),
+        ].map(({ decision, original, tailored }) => ({ decision, original, tailored }));
+
         const res = await fetch('/api/tailor-resume', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             parsed_resume:   resume,
             job_description: job.description || `${job.job_title} at ${job.company}. Requirements: ${(job.requirements_array || []).join(', ')}`,
+            preferences:     preferences.length ? preferences : undefined,
           }),
           signal: controller.signal,
         });
@@ -261,6 +271,7 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
           onClose={handleBack}
           isLoggedIn={!!user}
           onRequestAuth={handleBack}
+          onDecisionLogged={user ? () => { void pushToDb(supabase, user.id); } : undefined}
           onCommit={handleCommit}
           streaming={tailoring}
           pageMode={true}

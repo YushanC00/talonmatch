@@ -7,6 +7,7 @@ import JobFeed from './components/JobFeed';
 import GoogleSignIn from './components/GoogleSignIn';
 import UserMenu from './components/UserMenu';
 import { supabase } from './lib/supabase';
+import { pullFromDb, pushToDb } from './lib/telemetrySync';
 import { resolveCity } from './utils/geolocation';
 import { makeFreshnessComparator, filterExpired } from './utils/jobSort';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
@@ -315,6 +316,9 @@ export default function App() {
           setPendingTailorJobUrl(savedTailorJob);
           localStorage.removeItem('talonmatch_pending_tailor_job');
         }
+
+        // Sync preference telemetry: pull remote → merge local, then push any guest decisions up
+        void pullFromDb(supabase, session.user.id).then(() => pushToDb(supabase, session.user.id));
 
         // Reveal immediately — upsert is background work, don't block the user
         requestAnimationFrame(() => requestAnimationFrame(() => setRevealed(true)));

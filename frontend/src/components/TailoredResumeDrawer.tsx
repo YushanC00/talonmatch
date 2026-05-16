@@ -19,6 +19,7 @@ interface DrawerInnerProps {
   onCommitWithState?: (reviews: Record<string, string>, editValues: Record<string, string>) => void
   isLoggedIn?: boolean
   onRequestAuth?: () => void
+  onDecisionLogged?: () => void
   initialReviews?: Record<string, string> | null
   initialEditValues?: Record<string, string> | null
   savedMatchScore?: number | null
@@ -139,6 +140,7 @@ function TailoredResumeDrawerInner({
   onCommitWithState,
   isLoggedIn = true,
   onRequestAuth,
+  onDecisionLogged,
   initialReviews = null,
   initialEditValues = null,
   savedMatchScore = null,
@@ -250,15 +252,19 @@ function TailoredResumeDrawerInner({
   const getReview = (k: string) => reviews[k] || null;
   const setReview = (k: string, status: string | null, textPair?: { original: string; tailored: string }) => {
     const prev = reviews[k] ?? null;
+    let didLog = false;
     if (textPair && status === 'accepted' && prev !== 'accepted') {
       logDecision({ key: k, decision: 'accepted', original: textPair.original, tailored: textPair.tailored, jobTitle, company });
+      didLog = true;
     } else if (textPair && status === null && prev === 'accepted') {
       logDecision({ key: k, decision: 'rejected', original: textPair.original, tailored: textPair.tailored, jobTitle, company });
+      didLog = true;
     }
     setReviews(prev => {
       if (status === null) { const n = { ...prev }; delete n[k]; return n; }
       return { ...prev, [k]: status };
     });
+    if (didLog) onDecisionLogged?.();
   };
 
   const summaryObj: SummaryObj = isNewFormat
