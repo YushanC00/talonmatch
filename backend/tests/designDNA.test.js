@@ -432,9 +432,11 @@ describe('buildDNAResult', () => {
   });
 
   it('layout.columns is 2 when items spread across page', () => {
+    // Each item needs a unique y so the line-start algorithm captures both
+    // left and right column starts (not just the leftmost per shared row)
     const wideItems = [
-      ...Array(15).fill(null).map((_, i) => makeTextItem(`Left ${i}`, 10, 50)),
-      ...Array(10).fill(null).map((_, i) => makeTextItem(`Right ${i}`, 10, 400)),
+      ...Array(15).fill(null).map((_, i) => ({ ...makeTextItem(`Left ${i}`, 10, 50), y: 700 - i * 14 })),
+      ...Array(10).fill(null).map((_, i) => ({ ...makeTextItem(`Right ${i}`, 10, 400), y: 500 - i * 14 })),
     ];
     const result = buildDNAResult(wideItems);
     expect(result.layout.columns).toBe(2);

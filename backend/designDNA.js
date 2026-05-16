@@ -43,12 +43,18 @@ function classifyFontProfile(fontNames) {
   return 'mixed';
 }
 
+// xValues should be LINE-START x positions (leftmost x per logical line),
+// not raw item x values. Single-column resumes have all line starts near
+// one x; true 2-col layouts have line starts clustering at two distinct x ranges.
 function detectColumns(xValues, pageWidth) {
   if (xValues.length < 20) return 1;
-  // Count items starting in the right 28-90% of page — 0.28 catches narrow sidebars
-  // that place their right column starting around 28-35% of page width
-  const rightColItems = xValues.filter(x => x > pageWidth * 0.28 && x < pageWidth * 0.90).length;
-  // If >12% of items start in right territory, strong signal for 2-col layout
+  const pw = (pageWidth && isFinite(pageWidth)) ? pageWidth : 612;
+  // Count line-starts in the right-column zone (28–90% of page)
+  const rightColItems = xValues.filter(x => x > pw * 0.28 && x < pw * 0.90).length;
+  // If >12% of line starts are in the right zone, signal for 2-col layout.
+  // Using line starts instead of all item x values prevents single-column
+  // resumes with wide text from falsely triggering this (their line starts
+  // all cluster near the left margin).
   if (rightColItems / xValues.length > 0.12) return 2;
   return 1;
 }
@@ -263,7 +269,17 @@ function buildDNAResult(allItems, colorResult = { accentColor: null }) {
   const pageWidth = allItems[0].pageWidth || 612;
   const xValues   = allItems.map(i => i.x).filter(x => x > 0);
   const marginLeft  = Math.round(percentile([...xValues].sort((a, b) => a - b), 0.05));
-  const columns     = detectColumns(xValues, pageWidth);
+  // Compute line-start x values: leftmost x per logical line (2pt y-bucket).
+  // These are what detectColumns needs — raw item x values include mid-sentence
+  // chunk positions that create false 2-col signals on single-column resumes.
+  const lineStartByY = {};
+  for (const item of allItems) {
+    if (item.x <= 0) continue;
+    const yKey = Math.round(item.y / 2) * 2;
+    if (lineStartByY[yKey] === undefined || item.x < lineStartByY[yKey]) lineStartByY[yKey] = item.x;
+  }
+  const lineStartXs = Object.values(lineStartByY);
+  const columns     = detectColumns(lineStartXs, pageWidth);
   const headerAlign = detectHeaderAlign(allItems, pageWidth, Math.max(marginLeft, 20));
 
   // Bullets

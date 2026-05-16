@@ -45,13 +45,13 @@ _Focus: AI prose humanization, high-velocity curation UX, and localized style le
 - [x] **Stream-Level Layer 1 Static Guardrails (`src/workers/streamTailor.ts`):**
   - **Synchronous Circuit Breaker:** Embed synchronous TypeScript validation loops directly inside the streaming worker chunk processing block to automate Section 2 & 3 of `tailoring_audit.md` and Section 3 of the `Professional Output Audit` (checking for intact section titles, strict array length parity, and exact character matching for protected Rule 11 dates/companies).
   - **Silent Patch Re-Queue:** Intercept broken chunks locally within 2ms. If an individual company node draft alters structural text flags or corrupts string delta highlights (`~~strikethrough~~` and `++addition++`), drop it and trigger a silent re-generation backend loop before delivering that specific chunk across the network.
-- [ ] **Stream-Level Layer 2 Semantic Evaluation (`src/services/auditorAgent.ts`):**
+- [x] **Stream-Level Layer 2 Semantic Evaluation (`src/services/auditorAgent.ts`):**
   - **Headless LLM Semantic Validator:** Connect the background streaming thread to a fast, specialized model pass to run linguistic analysis based on Section 1 & 2 of your `Professional Output Audit` matrix (automatically stripping out corporate fluff terms like "leveraging" or "customer-obsessed" and locking down domain keywords based on target industry lookups).
-- [ ] **Strategic Persona Prompt Refactor:** Enforce natural human prose structure directly inside the base generator template to decrease Layer 2 rejection rates.
-- [ ] **Workspace UX Polish Layer:**
+- [x] **Strategic Persona Prompt Refactor:** Enforce natural human prose structure directly inside the base generator template to decrease Layer 2 rejection rates.
+- [x] **Workspace UX Polish Layer:**
   - **Inline Paragraph Formatter Toggle:** Create a "View Clean Text" toggle on cards to hide Git-diff highlights.
   - **"Accept All" Batch Command:** Add a master button to commit section changes instantly.
-- [ ] **Dynamic PDF Generation Engine:** Wire the `[↓ PDF]` button to instantly compile and trigger a local file download of the finalized resume text array.
+- [x] **Dynamic PDF Generation Engine:** Wire the `[↓ PDF]` button to instantly compile and trigger a local file download of the finalized resume text array.
 
 ### 📦 Sprint 2: The Timeline & Security Gating (The Semi-Auto Launch)
 

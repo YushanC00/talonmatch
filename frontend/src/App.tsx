@@ -394,6 +394,7 @@ export default function App() {
         education:     (data['resume_education'] as ParsedResume['education']) || [],
         city:          (data['resume_city']    as string)                      || '',
         province:      (data['resume_province'] as string)                     || '',
+        most_recent_job_title: (data['most_recent_job_title'] as string) || '',
         style_config:  (data['style_config'] as ParsedResume['style_config'])  ?? null,
       };
       setParsedResume(resumeJson);
