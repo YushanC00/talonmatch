@@ -29,7 +29,7 @@ interface ParsedResume {
   style_config?: { sections?: string[] } | null;
 }
 
-interface TailoredContentItem {
+export interface TailoredContentItem {
   id: string;
   label: string;
   original: string;
@@ -37,7 +37,7 @@ interface TailoredContentItem {
   rationale?: string;
 }
 
-interface TailoredSection {
+export interface TailoredSection {
   title: string;
   rationale: string;
   content: TailoredContentItem[];
