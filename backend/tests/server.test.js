@@ -1,13 +1,16 @@
 'use strict';
 
 jest.mock('pdf-parse/lib/pdf-parse.js', () => jest.fn());
-jest.mock('../resumeParserAI', () => ({ parseResumeAI: jest.fn() }));
+jest.mock('../resumeParserAI', () => ({
+  parseResumeAI: jest.fn(),
+  tokenStats: { totalUsed: 0, requests: 0, lastRequestTokens: 0 },
+}));
 jest.mock('../jobFetcher', () => ({ fetchJobs: jest.fn(), clearCache: jest.fn() }));
 jest.mock('../matchScorer', () => ({ scoreAndRank: jest.fn() }));
 jest.mock('../tailorResume', () => ({ streamTailorResume: jest.fn() }));
 
 const request = require('supertest');
-const { app } = require('../server');
+const { app, _groqState } = require('../server');
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 const { parseResumeAI } = require('../resumeParserAI');
 const { fetchJobs, clearCache } = require('../jobFetcher');
@@ -32,6 +35,10 @@ const ORIG_GROQ_KEY = process.env.GROQ_API_KEY;
 beforeEach(() => {
   jest.clearAllMocks();
   process.env.GROQ_API_KEY = 'test-key';
+  _groqState.status = 'unknown';
+  _groqState.detail = null;
+  _groqState.lastOk = null;
+  _groqState.lastError = null;
 });
 
 afterAll(() => {
@@ -285,5 +292,62 @@ describe('POST /api/tailor-resume', () => {
       .buffer(true);
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ── GET /api/health ─────────────────────────────────────────────────────────
+
+describe('GET /api/health', () => {
+  it('returns JSON with status ok when Accept is application/json', async () => {
+    const res = await request(app)
+      .get('/api/health')
+      .set('Accept', 'application/json');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(typeof res.body.uptime).toBe('number');
+    expect(res.body.groq).toBe('unknown');
+  });
+
+  it('returns HTML page when Accept is text/html', async () => {
+    const res = await request(app)
+      .get('/api/health')
+      .set('Accept', 'text/html');
+    expect(res.status).toBe(200);
+    expect(res.text).toMatch(/System Health/);
+    expect(res.text).toMatch(/API SERVER/i);
+    expect(res.text).toMatch(/GROQ \/ LLM/i);
+  });
+
+  it('reflects rate_limited groq state after a 429 match error', async () => {
+    const rateLimitErr = Object.assign(new Error('rate limit'), {
+      status: 429,
+      headers: { get: (k) => k === 'retry-after' ? '300' : null },
+      error: { error: { message: 'TPD exceeded' } },
+    });
+    pdfParse.mockRejectedValue(rateLimitErr);
+    await request(app)
+      .post('/api/match')
+      .attach('resume', Buffer.from('%PDF'), { filename: 'r.pdf', contentType: 'application/pdf' });
+
+    const res = await request(app)
+      .get('/api/health')
+      .set('Accept', 'application/json');
+    expect(res.body.groq).toBe('rate_limited');
+    expect(res.body.groqDetail).toMatch(/retry in 300s/);
+  });
+
+  it('reflects ok groq state after successful parse', async () => {
+    pdfParse.mockResolvedValue({ text: 'resume text' });
+    parseResumeAI.mockResolvedValue({ ...PARSED_RESUME });
+    fetchJobs.mockResolvedValue([]);
+    scoreAndRank.mockReturnValue([]);
+    await request(app)
+      .post('/api/match')
+      .attach('resume', Buffer.from('%PDF'), { filename: 'r.pdf', contentType: 'application/pdf' });
+
+    const res = await request(app)
+      .get('/api/health')
+      .set('Accept', 'application/json');
+    expect(res.body.groq).toBe('ok');
   });
 });

@@ -90,7 +90,13 @@ async function matchResume({ file, location, signal }: { file: File; location: s
   try { json = JSON.parse(text); } catch {
     throw new Error(`Invalid server response: ${text.slice(0, 200)}`);
   }
-  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    if (res.status === 429) {
+      const retryMatch = (json.details || json.error || '').match(/try again in ([^.]+)/i);
+      throw new Error(retryMatch ? `Groq rate limit — retry in ${retryMatch[1]}` : 'Groq rate limit reached. Try again in a few minutes.');
+    }
+    throw new Error(json.error || `Request failed (${res.status})`);
+  }
   return json;
 }
 
@@ -373,7 +379,7 @@ export default function App() {
     setError('');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+    const timeoutId = setTimeout(() => controller.abort(), 60_000);
 
     try {
       const location = geoCity || '';
@@ -429,7 +435,7 @@ export default function App() {
       console.error('[matchResume error]', err);
       const e = err as Error & { name?: string };
       if (e.name === 'AbortError') {
-        setError('Analysis taking longer than expected. Please try a smaller PDF.');
+        setError('Analysis timed out. Please try again.');
       } else {
         setError(e.message ?? String(err));
       }

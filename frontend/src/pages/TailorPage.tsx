@@ -134,7 +134,15 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
         if (!res.ok) {
           const text = await res.text();
           let msg = `Server error (${res.status})`;
-          try { msg = JSON.parse(text).error || msg; } catch {}
+          try {
+            const json = JSON.parse(text);
+            if (res.status === 429) {
+              const retryMatch = (json.details || json.error || '').match(/try again in ([^.]+)/i);
+              msg = retryMatch ? `Groq rate limit — retry in ${retryMatch[1]}` : 'Groq rate limit reached. Try again in a few minutes.';
+            } else {
+              msg = json.error || msg;
+            }
+          } catch {}
           throw new Error(msg);
         }
 

@@ -44,6 +44,9 @@ Return ONLY this JSON — no markdown, no extra keys:
   ]
 }`;
 
+// Shared token counter — imported by server.js health route
+const tokenStats = { totalUsed: 0, requests: 0, lastRequestTokens: 0 };
+
 async function parseResumeAI(rawText) {
   const completion = await getClient().chat.completions.create({
     model: 'llama-3.1-8b-instant',
@@ -55,6 +58,12 @@ async function parseResumeAI(rawText) {
     temperature: 0.1,
     response_format: { type: 'json_object' },
   });
+
+  const used = completion.usage?.total_tokens ?? 0;
+  tokenStats.totalUsed += used;
+  tokenStats.requests++;
+  tokenStats.lastRequestTokens = used;
+  console.log(`[groq] tokens used this request: ${used} | session total: ${tokenStats.totalUsed}`);
 
   const raw = completion.choices[0]?.message?.content?.trim();
   if (!raw) throw new Error('Empty response from Groq resume parser');
@@ -92,4 +101,4 @@ async function parseResumeAI(rawText) {
   };
 }
 
-module.exports = { parseResumeAI, _resetClientForTesting: () => { _client = null; } };
+module.exports = { parseResumeAI, tokenStats, _resetClientForTesting: () => { _client = null; } };

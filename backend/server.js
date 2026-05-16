@@ -4,7 +4,7 @@ const multer = require('multer');
 // Use internal path to skip pdf-parse's test-file side-effect on require
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 const cors = require('cors');
-const { parseResumeAI } = require('./resumeParserAI');
+const { parseResumeAI, tokenStats } = require('./resumeParserAI');
 const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { streamTailorResume } = require('./tailorResume');
@@ -16,6 +16,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ── Request logger ─────────────────────────────────────────────────────────────
+const _tokenLog = { used: 0, requests: 0, errors: 0 };
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    const flag = res.statusCode >= 400 ? '✗' : '✓';
+    console.log(`${flag} ${req.method} ${req.path} ${res.statusCode} ${ms}ms`);
+    if (res.statusCode >= 500) _tokenLog.errors++;
+  });
+  next();
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -25,6 +39,119 @@ const upload = multer({
     }
     cb(null, true);
   },
+});
+
+// Track Groq status from real requests — no probe calls that waste tokens
+const groqState = { status: 'unknown', detail: null, lastOk: null, lastError: null };
+
+app.get('/api/health', (req, res) => {
+  const groqStatus = groqState.status;
+  const groqDetail = groqState.detail;
+
+  if (req.accepts('html')) {
+    const uptime = Math.floor(process.uptime());
+    const h = Math.floor(uptime / 3600);
+    const m = Math.floor((uptime % 3600) / 60);
+    const s = uptime % 60;
+    const uptimeStr = `${h}h ${m}m ${s}s`;
+    const mem = process.memoryUsage();
+    const mb = (b) => `${Math.round(b / 1024 / 1024)}MB`;
+    const dot  = (st) => st === 'ok' ? '#4ade80' : st === 'rate_limited' ? '#facc15' : st === 'unknown' ? '#6b7280' : '#f87171';
+    const label = (st) => st === 'ok' ? 'Operational' : st === 'rate_limited' ? 'Rate limited' : st === 'unknown' ? 'No requests yet' : 'Error';
+    const TPD_LIMIT = 500_000;
+    const tokenPct = Math.min(100, Math.round((tokenStats.totalUsed / TPD_LIMIT) * 100));
+    const tokenBarColor = tokenPct > 80 ? '#f87171' : tokenPct > 60 ? '#facc15' : '#4ade80';
+    return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>TalonMatch · Health</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0f1113;color:#e2e8f0;font-family:'JetBrains Mono',ui-monospace,monospace;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:#1a1d21;border:1px solid #2d3139;width:100%;max-width:480px;padding:36px}
+  .logo{font-size:11px;letter-spacing:.18em;color:#6b7280;text-transform:uppercase;margin-bottom:28px}
+  .logo span{color:#a85e3e}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.01em;margin-bottom:32px;color:#f1f5f9}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid #23272e}
+  .row:last-child{border-bottom:none}
+  .service{font-size:12px;letter-spacing:.06em;color:#94a3b8;text-transform:uppercase}
+  .badge{display:flex;align-items:center;gap:8px;font-size:13px}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .detail{font-size:11px;color:#6b7280;margin-top:4px}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:14px 0;border-bottom:1px solid #23272e}
+  .stat-label{font-size:11px;color:#6b7280;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+  .stat-val{font-size:20px;font-weight:500;color:#f1f5f9}
+  .bar-wrap{padding:14px 0;border-bottom:1px solid #23272e}
+  .bar-header{display:flex;justify-content:space-between;margin-bottom:8px}
+  .bar-bg{background:#23272e;height:6px;width:100%}
+  .bar-fill{height:6px;transition:width .3s}
+  .ts{font-size:11px;color:#4b5563;margin-top:20px;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">Talon<span>Match</span> · Status</div>
+  <h1>System Health</h1>
+
+  <div class="row">
+    <div><div class="service">API Server</div></div>
+    <div class="badge"><div class="dot" style="background:#4ade80"></div>Operational</div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="service">Groq / LLM</div>
+      ${groqDetail ? `<div class="detail">${groqDetail}</div>` : ''}
+      ${groqState.lastOk ? `<div class="detail">last ok: ${new Date(groqState.lastOk).toUTCString()}</div>` : ''}
+      ${groqState.lastError ? `<div class="detail" style="color:#f87171">last error: ${new Date(groqState.lastError).toUTCString()}</div>` : ''}
+    </div>
+    <div class="badge">
+      <div class="dot" style="background:${dot(groqStatus)}"></div>
+      ${label(groqStatus)}
+    </div>
+  </div>
+
+  <div class="bar-wrap">
+    <div class="bar-header">
+      <span class="service">Groq tokens (session)</span>
+      <span class="detail" style="color:#94a3b8">${tokenStats.totalUsed.toLocaleString()} / ${TPD_LIMIT.toLocaleString()} &nbsp;·&nbsp; ${tokenPct}%</span>
+    </div>
+    <div class="bar-bg"><div class="bar-fill" style="width:${tokenPct}%;background:${tokenBarColor}"></div></div>
+    <div class="detail" style="margin-top:6px">${tokenStats.requests} parse requests &nbsp;·&nbsp; last: ${tokenStats.lastRequestTokens.toLocaleString()} tokens</div>
+  </div>
+
+  <div class="stat-grid">
+    <div>
+      <div class="stat-label">Uptime</div>
+      <div class="stat-val">${uptimeStr}</div>
+    </div>
+    <div>
+      <div class="stat-label">Heap used</div>
+      <div class="stat-val">${mb(mem.heapUsed)} <span style="font-size:13px;color:#6b7280">/ ${mb(mem.heapTotal)}</span></div>
+    </div>
+    <div>
+      <div class="stat-label">RSS</div>
+      <div class="stat-val">${mb(mem.rss)}</div>
+    </div>
+    <div>
+      <div class="stat-label">Errors (500)</div>
+      <div class="stat-val" style="color:${_tokenLog.errors > 0 ? '#f87171' : '#4ade80'}">${_tokenLog.errors}</div>
+    </div>
+  </div>
+
+  <div class="ts">
+    <span>auto-refresh every 30s</span>
+    <span>checked ${new Date().toUTCString()}</span>
+  </div>
+</div>
+</body>
+</html>`);
+  }
+
+  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), groq: groqStatus, groqDetail });
 });
 
 app.post('/api/resume/parse', upload.single('resume'), async (req, res) => {
@@ -87,7 +214,12 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
     // Strip U+00CF (Ï) from line-starts: pdfjs encodes ● as this when font uses custom glyph map
     const resumeText = pdfData.text.replace(/^Ï\s*/gm, '');
     const [resume, styleConfig] = await Promise.all([
-      parseResumeAI(resumeText),
+      parseResumeAI(resumeText).then(r => {
+        groqState.status = 'ok';
+        groqState.detail = null;
+        groqState.lastOk = new Date().toISOString();
+        return r;
+      }),
       extractDesignDNA(req.file.buffer).catch(err => {
         console.warn('[designDNA] extraction failed (non-fatal):', err.message);
         return null;
@@ -162,6 +294,17 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       jobs: rankedWithDates,
     });
   } catch (err) {
+    console.error('[/api/match error]', err);
+    if (err.status === 429) {
+      const retryAfter = err.headers?.get?.('retry-after');
+      groqState.status = 'rate_limited';
+      groqState.detail = retryAfter ? `retry in ${retryAfter}s` : err.error?.error?.message ?? err.message;
+      groqState.lastError = new Date().toISOString();
+    } else if (err.message?.includes('groq') || err.message?.includes('Groq') || err.constructor?.name?.includes('API')) {
+      groqState.status = 'error';
+      groqState.detail = err.message;
+      groqState.lastError = new Date().toISOString();
+    }
     res.status(500).json({ error: 'Match failed', details: err.message });
   }
 });
@@ -230,6 +373,16 @@ app.post('/api/tailor-resume', async (req, res) => {
       console.log('[tailor] stream aborted (client gone)');
     } else {
       console.error('[tailor] stream error:', err.message);
+      if (err.status === 429) {
+        const retryAfter = err.headers?.get?.('retry-after') ?? err.headers?.['retry-after'];
+        groqState.status = 'rate_limited';
+        groqState.detail = retryAfter ? `retry in ${retryAfter}s` : err.error?.error?.message ?? err.message;
+        groqState.lastError = new Date().toISOString();
+      } else if (!isAbort) {
+        groqState.status = 'error';
+        groqState.detail = err.message;
+        groqState.lastError = new Date().toISOString();
+      }
       if (!res.writableEnded)
         res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
     }
@@ -264,4 +417,4 @@ if (require.main === module) {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
-module.exports = { app };
+module.exports = { app, _groqState: groqState };
