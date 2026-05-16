@@ -16,34 +16,68 @@ interface TailorPageState {
   matchTier?: 'high' | 'mid' | 'low';
 }
 
+function classifySection(title: string): 'summary' | 'experience' | 'projects' | 'skills' | 'education' | null {
+  const t = title.toLowerCase();
+  if (/summary|profile|objective|about/.test(t)) return 'summary';
+  if (/experience|employment|work history|career/.test(t)) return 'experience';
+  if (/project/.test(t)) return 'projects';
+  if (/skills?|tech|stack|tool|competenc|qualif/.test(t)) return 'skills';
+  if (/educat|academic|degree|certif|training/.test(t)) return 'education';
+  return null;
+}
+
 function buildInitialSections(resume: ParsedResume | null): TailoredSection[] {
-  const sections: TailoredSection[] = [];
+  if (!resume) return [];
   const slug = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
   const splitDesc = (desc: string): string[] =>
     (desc || '').split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(s => s.length > 10);
 
-  const summaryText = resume?.summary || '';
-  sections.push({ title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: summaryText, tailored: summaryText }] });
+  // Use source section titles in resume order; fall back to detected order
+  const sourceTitles: string[] = resume.style_config?.sections?.length
+    ? resume.style_config.sections
+    : [
+        resume.summary ? (resume.summary_section_title || 'Summary') : null,
+        (resume.experience || []).length > 0 ? 'Work Experience' : null,
+        (resume.projects  || []).length > 0 ? 'Projects'        : null,
+        resume.skills.length > 0            ? 'Skills'          : null,
+        (resume.education || []).length > 0 ? 'Education'       : null,
+      ].filter((s): s is string => s !== null);
 
-  if (resume?.experience?.length) {
-    const content = resume.experience.flatMap((job) => {
-      const bullets = Array.isArray(job.bullets) && job.bullets.length > 0
-        ? job.bullets
-        : splitDesc(job.description || '');
-      const co = slug(job.company);
-      const lbl = `${job.title} @ ${job.company} (${job.period})`;
-      return bullets.slice(0, 6).map((b: string, bi: number) => ({ id: `we-${co}-${bi}`, label: bi === 0 ? lbl : '', original: b, tailored: b }));
-    });
-    if (content.length) sections.push({ title: 'Work Experience', rationale: '', content });
-  }
+  const sections: TailoredSection[] = [];
+  const used = new Set<string>(); // first occurrence of each type gets content; later ones get empty placeholder so SSE can fill in-place
 
-  if (resume?.projects?.length) {
-    const content = resume.projects.map(p => ({ id: `proj-${slug(p.name)}-0`, label: p.name || '', original: p.description || '', tailored: p.description || '' }));
-    if (content.length) sections.push({ title: 'Projects', rationale: '', content });
-  }
+  for (const title of sourceTitles) {
+    const type = classifySection(title);
+    if (!type) continue;
 
-  if (resume?.skills?.length) {
-    sections.push({ title: 'Skills', rationale: '', content: [{ id: 'skills-hard-0', label: 'Technical', original: resume.skills.join(', '), tailored: resume.skills.join(', ') }] });
+    let content: import('../types').TailoredContentItem[] = [];
+
+    if (!used.has(type)) {
+      if (type === 'summary' && resume.summary) {
+        content = [{ id: 'summary-0', label: '', original: resume.summary, tailored: resume.summary }];
+      } else if (type === 'experience' && (resume.experience || []).length > 0) {
+        content = resume.experience.flatMap((job) => {
+          const bullets = Array.isArray(job.bullets) && job.bullets.length > 0
+            ? job.bullets : splitDesc(job.description || '');
+          const co  = slug(job.company);
+          const lbl = `${job.title} @ ${job.company} (${job.period})`;
+          return bullets.slice(0, 6).map((b: string, bi: number) => ({ id: `we-${co}-${bi}`, label: bi === 0 ? lbl : '', original: b, tailored: b }));
+        });
+      } else if (type === 'projects' && (resume.projects || []).length > 0) {
+        content = (resume.projects || []).map(p => ({ id: `proj-${slug(p.name)}-0`, label: p.name || '', original: p.description || '', tailored: p.description || '' }));
+      } else if (type === 'skills' && resume.skills.length > 0) {
+        content = [{ id: 'skills-hard-0', label: 'Technical', original: resume.skills.join(', '), tailored: resume.skills.join(', ') }];
+      } else if (type === 'education' && (resume.education || []).length > 0) {
+        content = (resume.education || []).map((edu, i) => {
+          const text = [edu.degree, edu.school, edu.year ? `(${edu.year})` : ''].filter(Boolean).join(' — ');
+          return { id: `edu-${i}`, label: edu.degree || '', original: text, tailored: text };
+        });
+      }
+      if (content.length) used.add(type);
+    }
+
+    // Always create slot in correct resume order; SSE fills in content when it arrives
+    sections.push({ title, rationale: '', content });
   }
 
   return sections;

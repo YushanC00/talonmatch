@@ -22,6 +22,9 @@ const {
   stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
   truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,
+  sortCompaniesByRecency, runConcurrent,
+  tailorExperienceChunk,
+  tailorNonExperience, streamTailorParallel,
 } = require('../tailorResume');
 
 // ── SectionStreamParser ────────────────────────────────────────────────────────
@@ -719,5 +722,219 @@ describe('buildCandidateSkillSet', () => {
     };
     const set = buildCandidateSkillSet(resume);
     expect(set.has('kubernetes')).toBe(true);
+  });
+});
+
+// ── runConcurrent ──────────────────────────────────────────────────────────────
+
+describe('runConcurrent', () => {
+  it('returns results in input order', async () => {
+    const tasks = [
+      () => Promise.resolve(1),
+      () => Promise.resolve(2),
+      () => Promise.resolve(3),
+    ];
+    expect(await runConcurrent(tasks, 2)).toEqual([1, 2, 3]);
+  });
+
+  it('never exceeds concurrency limit', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const tasks = Array.from({ length: 6 }, () => async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise(r => setTimeout(r, 5));
+      active--;
+      return active;
+    });
+    await runConcurrent(tasks, 2);
+    expect(maxActive).toBeLessThanOrEqual(2);
+  });
+
+  it('returns empty array for empty input', async () => {
+    expect(await runConcurrent([], 3)).toEqual([]);
+  });
+
+  it('propagates task rejection', async () => {
+    const tasks = [
+      () => Promise.resolve(1),
+      () => Promise.reject(new Error('boom')),
+    ];
+    await expect(runConcurrent(tasks, 2)).rejects.toThrow('boom');
+  });
+});
+
+// ── tailorExperienceChunk ──────────────────────────────────────────────────────
+
+describe('tailorExperienceChunk', () => {
+  beforeEach(() => {
+    _resetClientForTesting();
+    Groq.mockClear();
+  });
+
+  it('returns a Work Experience section for a matching Groq response', async () => {
+    const section = {
+      title: 'Work Experience', rationale: 'backend match',
+      content: [{ id: 'we-acme-0', label: 'Engineer @ Acme (2020–2023)', original: 'Built API.', tailored: 'Built scalable API.' }],
+    };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorExperienceChunk({
+      jobEntry: { company: 'Acme', title: 'Engineer', period: '2020–2023', bullets: ['Built API.'] },
+      parsedResume: PARSED_RESUME,
+      jobDescription: JOB_DESCRIPTION,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.title).toBe('Work Experience');
+    expect(result.content[0].id).toBe('we-acme-0');
+  });
+
+  it('returns null when Groq emits no Work Experience section', async () => {
+    const fullJson = '{"_version":4,"sections":[]}';
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const result = await tailorExperienceChunk({
+      jobEntry: { company: 'Acme', title: 'Engineer', period: '2020–2023', bullets: [] },
+      parsedResume: PARSED_RESUME,
+      jobDescription: JOB_DESCRIPTION,
+    });
+
+    expect(result).toBeNull();
+  });
+});
+
+// ── tailorNonExperience ────────────────────────────────────────────────────────
+
+describe('tailorNonExperience', () => {
+  beforeEach(() => {
+    _resetClientForTesting();
+    Groq.mockClear();
+  });
+
+  it('yields section events for non-experience sections', async () => {
+    const summary = { title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: 'Dev.', tailored: 'React Dev.' }] };
+    const skills  = { title: 'Skills',  rationale: '', content: [{ id: 'skills-hard-0', label: 'Technical', original: 'React', tailored: 'React' }] };
+    const fullJson = `{"_version":4,"sections":[${JSON.stringify(summary)},${JSON.stringify(skills)}]}`;
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream([fullJson])) } },
+    }));
+
+    const events = [];
+    for await (const event of tailorNonExperience({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION })) {
+      events.push(event);
+    }
+
+    const titles = events.filter(e => e.type === 'section').map(e => e.section.title);
+    expect(titles).toContain('Summary');
+    expect(titles).toContain('Skills');
+  });
+
+  it('emits done event at end', async () => {
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: jest.fn().mockResolvedValue(makeStream(['{"_version":4,"sections":[]}'])) } },
+    }));
+
+    const events = [];
+    for await (const event of tailorNonExperience({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION })) {
+      events.push(event);
+    }
+
+    expect(events.some(e => e.type === 'done')).toBe(true);
+  });
+});
+
+// ── streamTailorParallel ───────────────────────────────────────────────────────
+
+describe('streamTailorParallel', () => {
+  beforeEach(() => {
+    _resetClientForTesting();
+    Groq.mockClear();
+  });
+
+  it('yields at least one section and a done event', async () => {
+    const summary = { title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: 'Dev.', tailored: 'Dev.' }] };
+    const json = `{"_version":4,"sections":[${JSON.stringify(summary)}]}`;
+    // Both calls return same response; exp chunk ignores non-experience titles
+    const createMock = jest.fn().mockResolvedValue(makeStream([json]));
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: createMock } },
+    }));
+
+    const events = [];
+    for await (const event of streamTailorParallel({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION })) {
+      events.push(event);
+    }
+
+    expect(events.some(e => e.type === 'section')).toBe(true);
+    expect(events.some(e => e.type === 'done')).toBe(true);
+  });
+
+  it('makes N+1 Groq calls for N experience entries (1 non-exp + N exp chunks)', async () => {
+    const createMock = jest.fn().mockResolvedValue(makeStream(['{"_version":4,"sections":[]}']));
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: createMock } },
+    }));
+
+    const events = [];
+    for await (const event of streamTailorParallel({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION })) {
+      events.push(event);
+    }
+
+    // PARSED_RESUME has 1 experience entry → 1 nonExp call + 1 exp chunk call = 2
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('done event includes usage object', async () => {
+    const createMock = jest.fn().mockResolvedValue(makeStream(['{"_version":4,"sections":[]}']));
+    Groq.mockImplementationOnce(() => ({
+      chat: { completions: { create: createMock } },
+    }));
+
+    const events = [];
+    for await (const event of streamTailorParallel({ parsedResume: PARSED_RESUME, jobDescription: JOB_DESCRIPTION })) {
+      events.push(event);
+    }
+
+    const done = events.find(e => e.type === 'done');
+    expect(done).toBeDefined();
+    expect(done.usage).toBeDefined();
+  });
+});
+
+describe('sortCompaniesByRecency', () => {
+  it('sorts most-recent year first', () => {
+    const exp = [
+      { company: 'Old Corp',  period: 'Jan 2015 – Mar 2018' },
+      { company: 'New Corp',  period: '2022–Now' },
+      { company: 'Mid Corp',  period: '2019 – 2021' },
+    ];
+    const sorted = sortCompaniesByRecency(exp);
+    expect(sorted.map(e => e.company)).toEqual(['New Corp', 'Mid Corp', 'Old Corp']);
+  });
+
+  it('handles missing period gracefully (year 0, sorts last)', () => {
+    const exp = [
+      { company: 'A', period: '2020–Now' },
+      { company: 'B', period: '' },
+    ];
+    const sorted = sortCompaniesByRecency(exp);
+    expect(sorted[0].company).toBe('A');
+    expect(sorted[1].company).toBe('B');
+  });
+
+  it('does not mutate original array', () => {
+    const exp = [
+      { company: 'A', period: '2019–Now' },
+      { company: 'B', period: '2022–Now' },
+    ];
+    const original = [...exp];
+    sortCompaniesByRecency(exp);
+    expect(exp[0].company).toBe(original[0].company);
   });
 });

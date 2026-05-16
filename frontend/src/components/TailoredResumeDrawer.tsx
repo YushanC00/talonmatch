@@ -1,5 +1,5 @@
 import React, { Component, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useAnimation } from 'motion/react';
+import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import * as Diff from 'diff';
 import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
@@ -174,17 +174,24 @@ function TailoredResumeDrawerInner({
 
   const v4Sections  = isV4 ? (data.sections || []) : [];
 
-  // Expected section count — used to drive the top progress bar
+  // Expected section count — driven by what buildInitialSections actually created
   const expectedSections = useMemo(() => {
     if (!isV4) return 0;
-    let n = 0;
-    if (parsedResume?.summary) n++;
-    if ((parsedResume?.experience || []).length > 0) n++;
-    if ((parsedResume?.projects  || []).length > 0) n++;
-    if ((parsedResume?.skills    || []).length > 0) n++;
-    if ((parsedResume?.education || []).length > 0) n++;
-    return n || 4;
-  }, [isV4, parsedResume]);
+    return v4Sections.length || 4;
+  }, [isV4, v4Sections]);
+
+  // Per-section streaming status for the intercept panel
+  // Derived from actual sections (which are in resume source order from buildInitialSections)
+  const sectionStatuses = useMemo(() => {
+    if (!isV4) return [];
+    return v4Sections.map(sec => {
+      const items = sec.content || [];
+      const done  = items.some(i => i.tailored !== i.original);
+      return { name: sec.title, status: done ? 'done' as const : 'queued' as const, count: items.length };
+    });
+  }, [isV4, v4Sections]);
+
+  const streamDoneCount = sectionStatuses.filter(s => s.status === 'done').length;
 
   // Top loading bar state
   const wasStreamingRef = useRef(false);
@@ -782,6 +789,58 @@ function TailoredResumeDrawerInner({
             </div>
           </header>
 
+          {/* Streaming intercept panel */}
+          <AnimatePresence>
+            {isV4 && streaming && (
+              <motion.div
+                key="stream-panel"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                style={{ overflow: 'hidden', flexShrink: 0, borderBottom: '1px solid var(--rule)', background: 'var(--washi)' }}
+              >
+                <div style={{ padding: '12px 28px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.22em', color: 'var(--shu)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <motion.span
+                        animate={{ opacity: [1, 0.2, 1] }}
+                        transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                        style={{ display: 'inline-block', width: 5, height: 5, background: 'var(--shu)', flexShrink: 0 }}
+                      />
+                      Intercept active
+                    </span>
+                    <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.16em', color: 'var(--sumi-mute)' }}>
+                      {streamDoneCount} / {sectionStatuses.length} sections
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {sectionStatuses.map(({ name, status, count }) => (
+                      <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, height: 18, borderLeft: '2px solid transparent', paddingLeft: 6 }}>
+                        {status === 'done' ? (
+                          <div style={{ width: 7, height: 7, background: 'var(--moss)', flexShrink: 0 }} />
+                        ) : (
+                          <div style={{ width: 7, height: 7, border: '1px solid var(--rule)', flexShrink: 0 }} />
+                        )}
+                        <span className="tm-mono" style={{ fontSize: 10, letterSpacing: '0.04em', flex: 1, color: status === 'done' ? 'var(--sumi-mute)' : 'var(--sumi-faint)' }}>
+                          {name}
+                        </span>
+                        {/experience/i.test(name) && count > 0 && (
+                          <span className="tm-mono" style={{ fontSize: 9, color: status === 'done' ? 'var(--moss)' : 'var(--rule)', letterSpacing: '0.08em' }}>
+                            {count} bullets
+                          </span>
+                        )}
+                        <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: status === 'done' ? 'var(--moss)' : 'var(--rule)', minWidth: 44, textAlign: 'right' }}>
+                          {status === 'done' ? 'Done' : '○'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* BODY */}
           <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', flex: 1, ...(pageMode ? {} : { overflow: 'hidden' }) }}>
 
@@ -860,14 +919,10 @@ function TailoredResumeDrawerInner({
                   {v4Sections.map(section => {
                     const isSkillsSec = /^skills/i.test(section.title);
                     const items = section.content || [];
-                    const isLoadingSection = streaming && items.length > 0 && items.every(item => item.tailored === item.original);
                     return (
                       <section key={section.title} ref={el => { sectionRefs.current[section.title] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <h3 style={{ ...SECTION_HEAD, margin: 0 }}>{section.title}</h3>
-                          {isLoadingSection && (
-                            <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.18em', color: 'var(--shu)', textTransform: 'uppercase', opacity: 0.8 }}>AI refining…</span>
-                          )}
                         </div>
 
                         {section.rationale && (

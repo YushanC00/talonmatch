@@ -63,6 +63,15 @@ function slugify(str) {
   return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
 }
 
+function extractStartYear(period) {
+  const m = (period || '').match(/\d{4}/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+function sortCompaniesByRecency(experience) {
+  return [...experience].sort((a, b) => extractStartYear(b.period) - extractStartYear(a.period));
+}
+
 function splitDescription(description) {
   if (!description) return [];
   return description
@@ -415,6 +424,62 @@ async function tailorResume({ parsedResume, jobDescription }) {
   return result;
 }
 
+// ── Parallel chunking helpers ─────────────────────────────────────────────────
+
+async function runConcurrent(tasks, concurrency = 3) {
+  if (!tasks.length) return [];
+  const results = new Array(tasks.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+  return results;
+}
+
+async function tailorExperienceChunk({ jobEntry, parsedResume, jobDescription, signal }) {
+  const focusedResume = { ...parsedResume, experience: [jobEntry] };
+  let result = null;
+  for await (const event of streamTailorResume({ parsedResume: focusedResume, jobDescription, signal })) {
+    if (event.type === 'section' && /experience/i.test(event.section.title)) {
+      result = event.section;
+    }
+  }
+  return result;
+}
+
+async function* tailorNonExperience({ parsedResume, jobDescription, signal }) {
+  const noExpResume = { ...parsedResume, experience: [] };
+  yield* streamTailorResume({ parsedResume: noExpResume, jobDescription, signal });
+}
+
+async function* streamTailorParallel({ parsedResume, jobDescription, signal }) {
+  const sorted = sortCompaniesByRecency(parsedResume.experience || []);
+  const totalUsage = { promptTokens: 0, completionTokens: 0 };
+
+  const nonExpSections = [];
+  const nonExpPromise = (async () => {
+    for await (const event of tailorNonExperience({ parsedResume, jobDescription, signal })) {
+      if (event.type === 'section') nonExpSections.push(event.section);
+      if (event.type === 'done') {
+        totalUsage.promptTokens    += event.usage?.promptTokens    || 0;
+        totalUsage.completionTokens += event.usage?.completionTokens || 0;
+      }
+    }
+  })();
+
+  const expTasks   = sorted.map(jobEntry => () => tailorExperienceChunk({ jobEntry, parsedResume, jobDescription, signal }));
+  const expResults = await runConcurrent(expTasks);
+  await nonExpPromise;
+
+  for (const s of nonExpSections)            yield { type: 'section', section: s };
+  for (const s of expResults) if (s)         yield { type: 'section', section: s };
+  yield { type: 'done', usage: totalUsage };
+}
+
 // ── Suggestion Validation ─────────────────────────────────────────────────────
 
 function validateSuggestionAST(suggestion) {
@@ -434,5 +499,7 @@ module.exports = {
   stripHallucinatedMetrics, stripHallucinatedSkillClaims, buildCandidateSkillSet,
   truncateItem, truncateRationale,
   extractMetrics, scoreTailoredResult,
+  sortCompaniesByRecency, runConcurrent,
+  tailorExperienceChunk, tailorNonExperience, streamTailorParallel,
   _resetClientForTesting: () => { _client = null; },
 };
