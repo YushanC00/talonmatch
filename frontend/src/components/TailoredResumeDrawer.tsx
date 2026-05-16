@@ -22,6 +22,7 @@ interface DrawerInnerProps {
   initialEditValues?: Record<string, string> | null
   savedMatchScore?: number | null
   streaming?: boolean
+  pageMode?: boolean
 }
 
 type LegacyBullet   = { original_text?: string; tailored_text?: string; is_new_suggestion?: boolean }
@@ -140,6 +141,7 @@ function TailoredResumeDrawerInner({
   initialEditValues = null,
   savedMatchScore = null,
   streaming = false,
+  pageMode = false,
 }: DrawerInnerProps) {
   const requirements    = job?.requirements_array || [];
   const totalRequirements = requirements.length;
@@ -512,12 +514,17 @@ function TailoredResumeDrawerInner({
 
   const scrollTo = useCallback((key: string) => {
     const el = sectionRefs.current[key];
+    if (!el) return;
+    if (pageMode) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     const container = contentRef.current;
-    if (!el || !container) return;
+    if (!container) return;
     const containerRect = container.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     container.scrollTo({ top: elRect.top - containerRect.top + container.scrollTop - 16, behavior: 'smooth' });
-  }, []);
+  }, [pageMode]);
 
   const toggleExp = useCallback((ei: number) => {
     setOpenExperience(prev => {
@@ -649,7 +656,7 @@ function TailoredResumeDrawerInner({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 50 }} role="dialog" aria-modal="true">
+    <div style={pageMode ? { width: '100%', background: 'var(--paper)' } : { position: 'fixed', inset: 0, zIndex: 50 }} role={pageMode ? 'main' : 'dialog'} aria-modal={pageMode ? undefined : true}>
 
       {/* CSS for edit buttons — always visible at low opacity, full on hover/focus */}
       <style>{`
@@ -657,22 +664,26 @@ function TailoredResumeDrawerInner({
         .tailor-edit-btn:hover, .tailor-edit-btn:focus { opacity: 1; }
       `}</style>
 
-      {/* Backdrop */}
+      {/* Backdrop (skipped in page mode) */}
       <motion.div
         initial={{ opacity: 0 }}
-        animate={{ opacity: visible ? 1 : 0 }}
-        transition={{ duration: 0.25 }}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(27,22,18,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 24px', overflowY: 'auto' }}
-        onClick={handleClose}
+        animate={{ opacity: pageMode ? 1 : visible ? 1 : 0 }}
+        transition={{ duration: pageMode ? 0 : 0.25 }}
+        style={pageMode
+          ? { position: 'relative' }
+          : { position: 'fixed', inset: 0, background: 'rgba(27,22,18,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 24px', overflowY: 'auto' }}
+        onClick={pageMode ? undefined : handleClose}
         data-testid="drawer-backdrop"
       >
-        {/* Modal */}
+        {/* Modal (or full-page container in page mode) */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.97, y: 14 }}
-          animate={visible ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.97, y: 14 }}
-          transition={{ type: 'spring', stiffness: 360, damping: 30 }}
-          style={{ position: 'relative', width: '100%', maxWidth: 980, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, boxShadow: '0 30px 60px -20px rgba(27,22,18,0.4)', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 80px)' }}
-          onClick={e => e.stopPropagation()}
+          initial={{ opacity: 0, scale: pageMode ? 1 : 0.97, y: pageMode ? 0 : 14 }}
+          animate={pageMode ? { opacity: 1, scale: 1, y: 0 } : visible ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.97, y: 14 }}
+          transition={pageMode ? { duration: 0 } : { type: 'spring', stiffness: 360, damping: 30 }}
+          style={pageMode
+            ? { position: 'relative', width: '100%', background: 'var(--paper)', display: 'flex', flexDirection: 'column' }
+            : { position: 'relative', width: '100%', maxWidth: 980, background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, boxShadow: '0 30px 60px -20px rgba(27,22,18,0.4)', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 80px)' }}
+          onClick={pageMode ? undefined : e => e.stopPropagation()}
         >
           {/* Shu top stripe */}
           <div style={{ height: 3, background: 'var(--shu)', borderRadius: '3px 3px 0 0', flexShrink: 0 }} />
@@ -710,17 +721,21 @@ function TailoredResumeDrawerInner({
           )}
 
           {/* HEADER */}
-          <header style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0 }}>
+          <header style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0, ...(pageMode ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--paper)' } : {}) }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.24em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 6 }}>
-                Tailoring · {company}
-              </div>
+              {!pageMode && (
+                <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.24em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Tailoring · {company}
+                </div>
+              )}
               <h2 className="tm-mincho" style={{ margin: 0, fontSize: 26, fontWeight: 700, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
                 {autoAccept ? 'Résumé ready to download' : 'Review tailored résumé'}
               </h2>
-              <div style={{ marginTop: 6, fontSize: 13, color: 'var(--sumi-mute)', fontFamily: 'Inter' }}>
-                {jobTitle} <span style={{ color: 'var(--sumi-faint)' }}>·</span> {company}
-              </div>
+              {!pageMode && (
+                <div style={{ marginTop: 6, fontSize: 13, color: 'var(--sumi-mute)', fontFamily: 'Inter' }}>
+                  {jobTitle} <span style={{ color: 'var(--sumi-faint)' }}>·</span> {company}
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               {/* Match score badge */}
@@ -756,20 +771,22 @@ function TailoredResumeDrawerInner({
                 </svg>
                 PDF
               </button>
-              {/* Close */}
-              <button onClick={handleClose} aria-label="Close" style={{ width: 32, height: 32, border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 3 L11 11 M11 3 L3 11" stroke="var(--sumi)" strokeWidth="1.4" strokeLinecap="round"/>
-                </svg>
-              </button>
+              {/* Close — hidden in pageMode (TailorPage owns the back nav) */}
+              {!pageMode && (
+                <button onClick={handleClose} aria-label="Close" style={{ width: 32, height: 32, border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                    <path d="M3 3 L11 11 M11 3 L3 11" stroke="var(--sumi)" strokeWidth="1.4" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              )}
             </div>
           </header>
 
           {/* BODY */}
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', flex: 1, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', flex: 1, ...(pageMode ? {} : { overflow: 'hidden' }) }}>
 
             {/* Sidebar nav */}
-            <nav style={{ borderRight: '1px solid var(--rule)', background: 'var(--washi-soft)', padding: '22px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <nav style={{ borderRight: '1px solid var(--rule)', background: 'var(--washi-soft)', padding: '22px 18px', display: 'flex', flexDirection: 'column', gap: 2, ...(pageMode ? { position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh', overflowY: 'auto' } : { overflowY: 'auto' }) }}>
               <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.24em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 14 }}>Navigate</div>
               {navItems.map(item => {
                 const active = activeSection === item.k;
@@ -786,7 +803,7 @@ function TailoredResumeDrawerInner({
             </nav>
 
             {/* Scrollable content */}
-            <div ref={contentRef} style={{ overflowY: 'auto', padding: '24px 28px 32px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+            <div ref={contentRef} style={{ padding: '24px 28px 32px', display: 'flex', flexDirection: 'column', gap: 28, ...(pageMode ? {} : { overflowY: 'auto' }) }}>
 
               {/* Skill Alignment — V1/V2/V3 only; V4 renders its own inside the dynamic block */}
               {!isV4 && requirements.length > 0 && (

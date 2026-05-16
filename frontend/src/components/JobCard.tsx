@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import type { SyntheticEvent } from 'react';
 import { MapPin, Globe } from 'lucide-react';
-import TailoredResumeDrawer from './TailoredResumeDrawer';
 import AuthModal from './AuthModal';
 import { partitionSkills } from '../utils/tokenMatcher';
-import type { Job, ParsedResume, TailoredResume, TailoredSection } from '../types';
+import type { Job, ParsedResume } from '../types';
 import type { User } from '@supabase/supabase-js';
 
 interface JobCardProps {
@@ -171,19 +171,13 @@ function MatchSeal({ value, matched = 0, missing = 0 }: { value: number; matched
 
 export default function JobCard({ job, parsedResume, resumeLoading = false, resumeFetched = false, onViewDetails: _onViewDetails, isLoggedIn = false, onLogin,
   onSaveBeforeRedirect, pendingTailorJobUrl, onPendingTailorHandled,
-  isTailored = false, onCommitTailoring, index: _index = 0 }: JobCardProps) {
+  isTailored = false, onCommitTailoring: _onCommitTailoring, index: _index = 0 }: JobCardProps) {
   const { job_title, company, location, is_remote, match_score, requirements_array, url, description, postedAt, pay_range, company_url } = job;
+  const navigate = useNavigate();
 
   const [hovered, setHovered] = useState(false);
-  const [tailoring, setTailoring] = useState(false);
-  const [tailored, setTailored] = useState<TailoredResume | null>(null);
   const [tailorError, setTailorError] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [committedData, setCommittedData] = useState<{
-    tailored: TailoredResume;
-    reviews: Record<string, string>;
-    editValues: Record<string, string>;
-  } | null>(null);
 
   const showRemote = is_remote
     || /remote/i.test(location || '')
@@ -205,38 +199,7 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
     console.log('[Matching Debug]: Resume Skills:', resumeSkills, '| Job Skills:', requirements_array ?? []);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function buildInitialSections(resume: ParsedResume | null) {
-    const sections: TailoredSection[] = [];
-    const slug = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
-    // Mirror backend splitDescription so bullet count matches AI output structure
-    const splitDesc = (desc: string): string[] =>
-      (desc || '').split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(s => s.length > 10);
-    // Always pre-populate Summary at position 0 so AI response replaces in-place (not appended)
-    const summaryText = resume?.summary || '';
-    sections.push({ title: 'Summary', rationale: '', content: [{ id: 'summary-0', label: '', original: summaryText, tailored: summaryText }] });
-    if (resume?.experience?.length) {
-      const content = resume.experience.flatMap((job, _ei) => {
-        const bullets = Array.isArray(job.bullets) && job.bullets.length > 0
-          ? job.bullets
-          : splitDesc(job.description || '');
-        const co = slug(job.company);
-        const lbl = `${job.title} @ ${job.company} (${job.period})`;
-        return bullets.slice(0, 6).map((b: string, bi: number) => ({ id: `we-${co}-${bi}`, label: bi === 0 ? lbl : '', original: b, tailored: b }));
-      });
-      if (content.length) sections.push({ title: 'Work Experience', rationale: '', content });
-    }
-    if (resume?.projects?.length) {
-      const content = resume.projects.map((p: NonNullable<ParsedResume['projects']>[number]) => ({ id: `proj-${slug(p.name)}-0`, label: p.name || '', original: p.description || '', tailored: p.description || '' }));
-      if (content.length) sections.push({ title: 'Projects', rationale: '', content });
-    }
-    if (resume?.skills?.length) {
-      sections.push({ title: 'Skills', rationale: '', content: [{ id: 'skills-hard-0', label: 'Technical', original: resume.skills.join(', '), tailored: resume.skills.join(', ') }] });
-    }
-    return sections;
-  }
-
-  const handleTailor = async () => {
-    if (tailoring) return;
+  const handleTailor = () => {
     if (!isLoggedIn) {
       if (parsedResume?.skills?.length > 0) {
         localStorage.setItem('talonmatch_pending_resume', JSON.stringify({
@@ -253,92 +216,9 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
       setTailorError('Upload your resume first — tailoring requires your work history.');
       return;
     }
-    setTailoring(true);
-    setTailored({ _version: 4, sections: buildInitialSections(parsedResume) }); // open with original content immediately
-    setTailorError('');
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120_000);
-    const t0 = performance.now();
-    let ttfs: number | null = null;
-
-    try {
-      const res = await fetch('/api/tailor-resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parsed_resume:   parsedResume,
-          job_description: description || `${job_title} at ${company}. Requirements: ${(requirements_array || []).join(', ')}`,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        const text = await res.text();
-        let msg = `Server error (${res.status})`;
-        try { msg = JSON.parse(text).error || msg; } catch {}
-        throw new Error(msg);
-      }
-
-      // Consume SSE stream — open drawer on first section, update on each subsequent one
-      const reader  = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let sseBuf = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        sseBuf += chunk;
-        const parts = sseBuf.split('\n\n');
-        sseBuf = parts.pop() ?? '';
-
-        for (const part of parts) {
-          const line = part.split('\n').find(l => l.startsWith('data: '));
-          if (!line) continue;
-          let event;
-          try { event = JSON.parse(line.slice(6)); } catch (e) { console.log('[tailor] SSE parse err:', (e as Error).message, line.slice(0, 80)); continue; }
-
-          if (event.type === 'section') {
-            if (ttfs === null) {
-              ttfs = Math.round(performance.now() - t0);
-              console.log(`[perf] TTFS ${ttfs}ms — "${event.section.title}"`);
-            }
-            setTailored(prev => {
-              const existing = prev?.sections || [];
-              const idx = existing.findIndex(s => s.title === event.section.title);
-              if (idx >= 0) {
-                const updated = [...existing];
-                updated[idx] = event.section;
-                return { _version: 4, sections: updated };
-              }
-              return { _version: 4, sections: [...existing, event.section] };
-            });
-          } else if (event.type === 'error') {
-            throw new Error(event.message);
-          } else if (event.type === 'done') {
-            const total = Math.round(performance.now() - t0);
-            console.log(`[perf] stream done — total ${total}ms  TTFS ${ttfs ?? '?'}ms`);
-          }
-        }
-      }
-    } catch (err) {
-      clearTimeout(timeoutId);
-      setTailored(prev => (prev?.sections?.length ? prev : null)); // dismiss empty drawer — error shows on card
-      const e = err as Error & { name?: string };
-      if (e.name === 'AbortError') {
-        setTailorError('Tailoring timed out. The AI is busy — please try again.');
-      } else {
-        setTailorError(e.message ?? String(err));
-      }
-    } finally {
-      setTailoring(false);
-    }
+    const jobId = encodeURIComponent(url || job_title || '');
+    navigate(`/tailor/${jobId}`, { state: { job, parsedResume, matchTier } });
   };
-
-  const handleCloseDrawer = () => setTailored(null);
 
   useEffect(() => {
     if (!isLoggedIn || !pendingTailorJobUrl || pendingTailorJobUrl !== url) return;
@@ -499,40 +379,23 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
 
             <div>
               {isTailored ? (
-                (committedData || url) && (
+                url && (
                   <div className="action-fade-in" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    {committedData && (
-                      <button
-                        onClick={() => setTailored(committedData.tailored)}
-                        style={{
-                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                          fontFamily: 'Inter', fontSize: 12, fontWeight: 500,
-                          color: 'var(--sumi-mute)', textDecoration: 'underline',
-                          textUnderlineOffset: 3,
-                        }}>
-                        Edit
-                      </button>
-                    )}
-                    {committedData && url && (
-                      <span style={{ color: 'var(--rule)', fontSize: 11 }}>·</span>
-                    )}
-                    {url && (
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          padding: '6px 11px', background: 'var(--moss)', color: 'var(--paper)',
-                          textDecoration: 'none', borderRadius: 2, fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
-                          boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)',
-                        }}>
-                        Apply
-                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </a>
-                    )}
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '6px 11px', background: 'var(--moss)', color: 'var(--paper)',
+                        textDecoration: 'none', borderRadius: 2, fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
+                        boxShadow: '0 1px 0 rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.10)',
+                      }}>
+                      Apply
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </a>
                   </div>
                 )
               ) : (() => {
@@ -562,7 +425,7 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
                 }
 
                 // Previous attempt failed — red Retry button
-                if (tailorError && !tailoring) {
+                if (tailorError) {
                   return (
                     <button
                       onClick={() => { setTailorError(''); handleTailor(); }}
@@ -581,11 +444,11 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
                   );
                 }
 
-                // Normal / tailoring-in-progress button
+                // Normal button — navigates to tailor page
                 return (
                   <button
                     onClick={handleTailor}
-                    disabled={tailoring || noResume}
+                    disabled={noResume}
                     title={noResume ? 'Upload résumé first' : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 7,
@@ -594,21 +457,14 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
                       color: 'var(--shu)',
                       border: '1px solid var(--shu)',
                       borderRadius: 2,
-                      cursor: tailoring ? 'wait' : noResume ? 'not-allowed' : 'pointer',
+                      cursor: noResume ? 'not-allowed' : 'pointer',
                       fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
-                      opacity: (tailoring || noResume) ? 0.45 : 1,
+                      opacity: noResume ? 0.45 : 1,
                     }}>
-                    {tailoring ? (
-                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                    ) : (
-                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                        <path d="M11 2 L14 5 L6 13 L2 14 L3 10 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                    {tailoring ? 'Tailoring…' : 'Tailor & Apply'}
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                      <path d="M11 2 L14 5 L6 13 L2 14 L3 10 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+                    </svg>
+                    Tailor & Apply
                   </button>
                 );
               })()}
@@ -616,38 +472,6 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
           </div>
         </div>
       </article>
-
-      {tailored && (
-        <TailoredResumeDrawer
-          data={tailored as unknown as Record<string, unknown>}
-          job={job}
-          parsedResume={parsedResume}
-          jobTitle={job_title}
-          company={company}
-          autoAccept={matchTier === 'high'}
-          onClose={handleCloseDrawer}
-          isLoggedIn={isLoggedIn}
-          onRequestAuth={() => {
-            if (parsedResume?.skills?.length > 0) {
-              localStorage.setItem('talonmatch_pending_resume', JSON.stringify({
-                skills: parsedResume.skills,
-                experience: parsedResume.experience ?? [],
-              }));
-            }
-            localStorage.setItem('talonmatch_pending_tailor_job', url ?? '');
-            onSaveBeforeRedirect?.();
-            setShowAuthModal(true);
-          }}
-          onCommit={(jobId: string) => onCommitTailoring?.(jobId)}
-          onCommitWithState={(reviews, editValues) => {
-            if (tailored) setCommittedData({ tailored, reviews, editValues });
-          }}
-          initialReviews={committedData?.reviews ?? null}
-          initialEditValues={committedData?.editValues ?? null}
-          savedMatchScore={null}
-          streaming={tailoring}
-        />
-      )}
 
       {showAuthModal && (
         <AuthModal

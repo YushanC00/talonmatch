@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import ResumeUpload from './components/ResumeUpload';
@@ -9,6 +10,7 @@ import { supabase } from './lib/supabase';
 import { resolveCity } from './utils/geolocation';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
 import DesignDNAPanel from './components/DesignDNAPanel';
+import TailorPage from './pages/TailorPage';
 import './index.css';
 
 function TalonMark({ size = 36 }) {
@@ -123,6 +125,8 @@ const SORT_OPTIONS = [
 ];
 
 export default function App() {
+  const location  = useLocation();
+  const navigate  = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -212,6 +216,16 @@ export default function App() {
   const handleCommitTailoring = (jobId: string) => {
     setTailoredJobIds(prev => new Set([...prev, jobId]));
   };
+
+  // Pick up committedJobId when TailorPage navigates back
+  useEffect(() => {
+    const state = location.state as { committedJobId?: string } | null;
+    if (state?.committedJobId) {
+      handleCommitTailoring(state.committedJobId);
+      // Clear so re-render won't re-apply
+      navigate('/', { replace: true, state: {} });
+    }
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Escape closes upload overlay
   useEffect(() => {
@@ -473,6 +487,11 @@ export default function App() {
     });
 
   return (
+    <Routes>
+      <Route path="/tailor/:jobId" element={
+        <TailorPage parsedResume={parsedResume} user={user} onCommitTailoring={handleCommitTailoring} />
+      } />
+      <Route path="/" element={
     <div className="min-h-screen">
       <SideOrnament side="left" />
       <SideOrnament side="right" />
@@ -812,5 +831,7 @@ export default function App() {
         </div>
       )}
     </div>
+      } />
+    </Routes>
   );
 }
