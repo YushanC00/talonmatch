@@ -3,3 +3,7 @@
 e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
+
+# Root-level test artifacts (screenshots + resume PDFs)
+/*.png
+/*.pdf

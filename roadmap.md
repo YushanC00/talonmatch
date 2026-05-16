@@ -58,12 +58,12 @@ _Focus: AI prose humanization, high-velocity curation UX, and localized style le
 - [x] **Live Validation Engine (The Freshness Check):**
   - **The Timeline Sort:** Pivot the dashboard grid to group incoming arrays chronologically (`⚡ Today's Fresh Tracks`) instead of sorting strictly by Match Score to surface new drops immediately.
   - **Dual-Layer Verification:** Implement HTTP ping + DOM keyword scraping to filter out expired listings before processing.
-- [ ] **Dynamic Vector Gating Engine (The Industry Leak Fix):**
+- [x] **Dynamic Vector Gating Engine (The Industry Leak Fix):**
   - **Semantic Cluster Boundary:** Implement an embedding-based distance check ($Sim$) comparing incoming API payloads against your parsed profile vector space to automatically discard completely unrelated fields before they enter your feed.
 
 ### 📦 Sprint 3: The Design Control Center (The Brand Builder)
 
-- [ ] **Interactive Design DNA Panel:**
+- [ -] **Interactive Design DNA Panel:**
   - **Live Style Overrides:** Connect your active toolbar state variables to functional inputs (color pickers, typography dropdowns) to allow manual UI theme modifications that cascade instantly to the PDF layout.
 
 ### 📦 Sprint 4: The Autopilot Protocol (Full Automation)
