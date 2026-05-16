@@ -214,6 +214,9 @@ function TailoredResumeDrawerInner({
   const [flashing,       setFlashing]       = useState(false);
   const [activeSection, setActiveSection] = useState('summary');
   const [openExperience, setOpenExperience] = useState(() => new Set([0]));
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl,  setPdfPreviewUrl]  = useState<string | null>(null);
+  const [pdfGenerating,  setPdfGenerating]  = useState(false);
   const prevScoreRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -382,13 +385,12 @@ function TailoredResumeDrawerInner({
   const reviewedCount = Object.keys(reviews).length + Object.keys(editValues).length;
   const progressPct   = totalItems > 0 ? Math.min(100, Math.round((reviewedCount / totalItems) * 100)) : 0;
 
-  const handleDownload = async () => {
-    console.log('[download] parsedResume.style_config:', JSON.stringify(parsedResume?.style_config));
+  const buildPdfBlob = async () => {
     const [{ pdf }, { default: ResumePDF }] = await Promise.all([
       import('@react-pdf/renderer'),
       import('./ResumePDF'),
     ]);
-    const blob = await pdf(
+    return pdf(
       <ResumePDF
         sections={v4Sections}
         parsedResume={parsedResume}
@@ -396,12 +398,42 @@ function TailoredResumeDrawerInner({
         editValues={editValues}
       />
     ).toBlob();
+  };
+
+  const handleDownload = async () => {
+    const blob = await buildPdfBlob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `tailored-resume-${company?.replace(/\s+/g, '-').toLowerCase() || 'job'}.pdf`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  const handlePreview = async () => {
+    setPdfPreviewOpen(true);
+    if (pdfPreviewUrl) return; // already generated
+    setPdfGenerating(true);
+    try {
+      const blob = await buildPdfBlob();
+      const url  = URL.createObjectURL(blob);
+      setPdfPreviewUrl(url);
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
+  const handlePreviewClose = () => {
+    setPdfPreviewOpen(false);
+  };
+
+  const handlePreviewDownload = async () => {
+    if (pdfPreviewUrl) {
+      const a = document.createElement('a');
+      a.href = pdfPreviewUrl;
+      a.download = `tailored-resume-${company?.replace(/\s+/g, '-').toLowerCase() || 'job'}.pdf`;
+      a.click();
+    }
   };
 
   const summaryStatus = getReview('summary');
@@ -709,7 +741,15 @@ function TailoredResumeDrawerInner({
                   </svg>
                 </a>
               )}
-              {/* PDF */}
+              {/* Preview PDF */}
+              <button onClick={handlePreview} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', color: 'var(--sumi)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.4"/>
+                  <circle cx="7" cy="7" r="2" fill="currentColor"/>
+                </svg>
+                Preview
+              </button>
+              {/* PDF download */}
               <button onClick={handleDownload} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', color: 'var(--sumi)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}>
                 <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                   <path d="M3 8 L7 12 L11 8 M7 2 V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -1389,6 +1429,81 @@ function TailoredResumeDrawerInner({
           ) : (
             toastMsg || 'Save failed — please try again'
           )}
+        </div>
+      )}
+
+      {/* PDF Preview overlay */}
+      {pdfPreviewOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(15,18,15,0.82)',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          {/* Preview header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 20px',
+            background: 'var(--paper)',
+            borderBottom: '1px solid var(--rule)',
+            flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <rect x="1" y="1" width="12" height="12" stroke="var(--sumi-mute)" strokeWidth="1" />
+                <line x1="3" y1="4" x2="11" y2="4" stroke="var(--rule)" strokeWidth="1" />
+                <line x1="3" y1="6.5" x2="11" y2="6.5" stroke="var(--rule)" strokeWidth="1" />
+                <line x1="3" y1="9" x2="8" y2="9" stroke="var(--rule)" strokeWidth="1" />
+              </svg>
+              <span className="tm-mono" style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--sumi-mute)', fontWeight: 600 }}>
+                PDF Preview
+              </span>
+              {company && (
+                <>
+                  <span style={{ color: 'var(--rule)', fontSize: 11 }}>·</span>
+                  <span className="tm-mono" style={{ fontSize: 11, color: 'var(--sumi-faint)' }}>{company}</span>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={handlePreviewDownload}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', border: 'none', borderRadius: 2, background: 'var(--sumi)', color: 'var(--paper)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 8 L7 12 L11 8 M7 2 V12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Download PDF
+              </button>
+              <button
+                onClick={handlePreviewClose}
+                aria-label="Close preview"
+                style={{ width: 30, height: 30, border: '1px solid var(--rule)', borderRadius: 2, background: 'var(--paper)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 3 L11 11 M11 3 L3 11" stroke="var(--sumi)" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* PDF iframe */}
+          <div style={{ flex: 1, background: '#525659', display: 'flex', alignItems: 'stretch' }}>
+            {pdfGenerating ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: '#ccc' }}>
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ animation: 'spin 1.2s linear infinite' }}>
+                  <circle cx="16" cy="16" r="13" stroke="rgba(255,255,255,0.15)" strokeWidth="3"/>
+                  <path d="M16 3 A13 13 0 0 1 29 16" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontFamily: 'Inter', fontSize: 13, letterSpacing: '0.04em' }}>Generating PDF…</span>
+              </div>
+            ) : pdfPreviewUrl ? (
+              <iframe
+                src={pdfPreviewUrl}
+                title="Resume PDF preview"
+                style={{ flex: 1, border: 'none', width: '100%' }}
+              />
+            ) : null}
+          </div>
         </div>
       )}
     </div>

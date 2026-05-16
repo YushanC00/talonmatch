@@ -30,13 +30,40 @@ _Focus: Data accuracy and core tailoring logic._
 
 ## 📅 Phase 2: Autopilot & Branding (The Professional)
 
-_Focus: High-end output and automation._
+_Focus: AI prose humanization, high-velocity curation UX, and localized style learning loops._
 
-- [ ] **Design DNA Extraction:** Analyze original PDF structure (Fonts/Layout) for `style_config`.
-- [ ] **Dynamic PDF Generation:** Use `react-pdf` to mirror the user's original design perfectly.
-- [ ] **Autosend Protocol:** Set "Autosend" rules (e.g., Match Score > 85%, Salary floor).
-- [ ] **The "Dirty" Apply:** One-click button to save state and open job URL for instant pasting.
-- [ ] **Timeline View:** Dashboard for application history, timestamps, and status tracking.
+- [x] **Design DNA Extraction Fallback:** Implemented default fallback to `sans-serif` to eliminate the "Unknown (不明)" UI glitch and protect PDF generation font metrics.
+
+### 📦 Sprint 1: Workstation Architecture & Voice Polish (The Immediate Wins)
+
+- [ ] **Structural Workstation Migration (Goodbye Modal):**
+  - **Dedicated Route Switch:** Move the editor from an overlay modal to a dedicated full-page view (`/tailor/:jobId`) to fix scroll contexts and restore left-sidebar anchor navigation tracking.
+  - **Sticky Telemetry Header:** Pin the primary action bar (`88% match`, `[Apply]`, `[↓ PDF]`) to the top of the page viewport using sticky positioning.
+- [ ] **Asynchronous Experience Chunking (Latency Fix):**
+  - **Parallel Company-Level Workers:** Segment the 17 Work Experience bullets by company nodes. Fire asynchronous parallel requests to the LLM instead of a monolithic block.
+  - **Sequential UI Hydration:** Stream completed chunks back to the client via SSE, prioritizing current roles first so the top of the workstation renders under 500ms while older history loads gracefully in the background.
+
+### 📦 Sprint 2: The Timeline & Security Gating (The Semi-Auto Launch)
+
+- [ ] **Live Validation Engine (The Freshness Check):**
+  - **The Timeline Sort:** Pivot the dashboard grid to group incoming arrays chronologically (`⚡ Today's Fresh Tracks`) instead of sorting strictly by Match Score to surface new drops immediately.
+  - **Dual-Layer Verification:** Implement HTTP ping + DOM keyword scraping to filter out expired listings before processing.
+- [ ] **Dynamic Vector Gating Engine (The Industry Leak Fix):**
+  - **Semantic Cluster Boundary:** Implement an embedding-based distance check ($Sim$) comparing incoming API payloads against your parsed profile vector space to automatically discard completely unrelated fields before they enter your feed.
+
+### 📦 Sprint 3: The Design Control Center (The Brand Builder)
+
+- [ ] **Interactive Design DNA Panel:**
+  - **Live Style Overrides:** Connect your active toolbar state variables to functional inputs (color pickers, typography dropdowns) to allow manual UI theme modifications that cascade instantly to the PDF layout.
+
+### 📦 Sprint 4: The Autopilot Protocol (Full Automation)
+
+- [ ] **Editorial Feedback Loop (The Learning Layer):**
+  - **Decision Telemetry Tracker:** Wire the `[✓]` and `[✕]` buttons to log your specific phrasing rejections and acceptances to a localized data collector.
+  - **Dynamic Few-Shot Injection:** Feed historical preference data back into the single-pass tailoring engine, allowing the AI to dynamically adapt to your personal writing voice over time.
+- [ ] **Autosend Protocol (The Auto-Apply Engine):**
+  - **Autonomous Execution Loop:** Build the background worker that automatically pairs fresh jobs with vector gates, runs clean-string generation bypassing the diff states, prints the themed PDF, and fires the application payload.
+  - **Guardrail Parameter Settings:** UI panel to configure rigid strict-apply thresholds (e.g., _Match Score > 85%_).
 
 ---
 

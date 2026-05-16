@@ -104,16 +104,27 @@ function detectSections(items, bodySize) {
 }
 
 function classifySectionColumns(sections, pageWidth) {
-  const midX = pageWidth / 2;
-  const left = [], right = [];
-  for (const s of sections) {
-    if (s.x < midX * 0.6) left.push(s.title);
-    else right.push(s.title);
+  if (sections.length < 2) return { left: [], right: sections.map(s => s.title) };
+
+  const sorted = [...sections].sort((a, b) => a.x - b.x);
+
+  // Find the largest gap between consecutive x positions
+  let maxGap = 0, splitAfter = -1;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const gap = sorted[i + 1].x - sorted[i].x;
+    if (gap > maxGap) { maxGap = gap; splitAfter = i; }
   }
-  // If everything is on one side, no real column split
-  if (left.length === 0 || right.length === 0) {
-    return { left: [], right: sections.map(s => s.title) };
-  }
+
+  // Require gap > 20% of page width, centred in the middle 50% of the page
+  const splitX = splitAfter >= 0 ? (sorted[splitAfter].x + sorted[splitAfter + 1].x) / 2 : 0;
+  const isReal = maxGap > pageWidth * 0.20
+    && splitX > pageWidth * 0.25
+    && splitX < pageWidth * 0.75;
+
+  if (!isReal) return { left: [], right: sections.map(s => s.title) };
+
+  const left  = sorted.slice(0, splitAfter + 1).map(s => s.title);
+  const right = sorted.slice(splitAfter + 1).map(s => s.title);
   return { left, right };
 }
 
@@ -239,7 +250,9 @@ function buildDNAResult(allItems, colorResult = { accentColor: null }) {
 
   // Font profile
   const fontNames = [...new Set(allItems.map(i => i.fontName).filter(Boolean))];
-  const fontProfile = classifyFontProfile(fontNames);
+  const rawProfile = classifyFontProfile(fontNames);
+  // Obfuscated/embedded fonts (e.g. g_d0_f1) can't be classified; default to sans-serif
+  const fontProfile = rawProfile === 'unknown' ? 'sans-serif' : rawProfile;
 
   // Layout
   const pageWidth = allItems[0].pageWidth || 612;
