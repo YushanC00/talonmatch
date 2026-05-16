@@ -37,7 +37,10 @@ function applyFluffFilter(text: string): { result: string; changed: boolean } {
         return sub;
       });
     }, text);
-  const result = substituted.replace(/  +/g, ' ').trim();
+  let result = substituted.replace(/  +/g, ' ').trim();
+  if (result.length > 0 && /^[A-Z]/.test(text)) {
+    result = result[0].toUpperCase() + result.slice(1);
+  }
   return { result, changed: substituted !== text };
 }
 

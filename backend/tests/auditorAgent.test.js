@@ -59,4 +59,11 @@ describe('auditorAgent', () => {
     expect(out.content[0].tailored).toBe('Built through and collaboration.');
     expect(patched).toBe(true);
   });
+
+  test('capitalises first word after sentence-start deletion', () => {
+    const section = makeSection([makeItem('Synergy drives innovation here.')]);
+    const { section: out, patched } = auditSection(section);
+    expect(out.content[0].tailored).toBe('Drives innovation here.');
+    expect(patched).toBe(true);
+  });
 });
