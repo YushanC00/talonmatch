@@ -55,7 +55,7 @@ _Focus: AI prose humanization, high-velocity curation UX, and localized style le
 
 ### 📦 Sprint 2: The Timeline & Security Gating (The Semi-Auto Launch)
 
-- [ ] **Live Validation Engine (The Freshness Check):**
+- [x] **Live Validation Engine (The Freshness Check):**
   - **The Timeline Sort:** Pivot the dashboard grid to group incoming arrays chronologically (`⚡ Today's Fresh Tracks`) instead of sorting strictly by Match Score to surface new drops immediately.
   - **Dual-Layer Verification:** Implement HTTP ping + DOM keyword scraping to filter out expired listings before processing.
 - [ ] **Dynamic Vector Gating Engine (The Industry Leak Fix):**

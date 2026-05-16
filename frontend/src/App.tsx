@@ -8,6 +8,7 @@ import GoogleSignIn from './components/GoogleSignIn';
 import UserMenu from './components/UserMenu';
 import { supabase } from './lib/supabase';
 import { resolveCity } from './utils/geolocation';
+import { makeFreshnessComparator, filterExpired } from './utils/jobSort';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
 import DesignDNAPanel from './components/DesignDNAPanel';
 import TailorPage from './pages/TailorPage';
@@ -67,7 +68,7 @@ function SideOrnament({ side }: { side: 'left' | 'right' }) {
 }
 
 function randomPostedAt() {
-  const daysAgo = Math.floor(Math.random() * 30);
+  const daysAgo = 3 + Math.floor(Math.random() * 27);
   return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -145,13 +146,14 @@ export default function App() {
 
   // Header filter / sort state (lifted from JobFeed)
   const [minScore, setMinScore] = useState(0);
-  const [dateFilter, setDateFilter] = useState('any');
+  const [dateFilter, setDateFilter] = useState('30d');
   const [sortBy, setSortBy] = useState('match_score');
   const [showFilters, setShowFilters] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
 
   const [refreshing, setRefreshing] = useState(false);
   const [syncToast, setSyncToast] = useState(false);
+  const [expiredUrls, setExpiredUrls] = useState<Set<string>>(new Set());
   const [tailoredJobIds, setTailoredJobIds] = useState<Set<string>>(new Set());
   const [parsedResume, setParsedResume] = useState<ParsedResume>({ skills: [], experience: [] });
   const [resumeLoading, setResumeLoading] = useState(false);
@@ -388,6 +390,23 @@ export default function App() {
       // Client-side postedAt guarantee — works even when server is running old code
       if (data.jobs) data.jobs = ensurePostedAt(data.jobs);
       setResults(data);
+      setExpiredUrls(new Set());
+      const verifyUrls = (data.jobs ?? []).map((j: Job) => j.url).filter(Boolean) as string[];
+      if (verifyUrls.length > 0) {
+        fetch('/api/jobs/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: verifyUrls }),
+        })
+          .then(r => r.json())
+          .then((resp: { results: Record<string, string> }) => {
+            const dead = Object.entries(resp.results)
+              .filter(([, s]) => s === 'expired')
+              .map(([url]) => url);
+            if (dead.length > 0) setExpiredUrls(new Set(dead));
+          })
+          .catch(() => {});
+      }
 
       const resumeJson: ParsedResume = {
         full_name:              (data['resume_full_name']             as string) || '',
@@ -451,7 +470,7 @@ export default function App() {
     setNotice('');
     setPendingTailorJobUrl(null);
     setMinScore(0);
-    setDateFilter('any');
+    setDateFilter('30d');
     setSortBy('match_score');
   };
 
@@ -475,7 +494,7 @@ export default function App() {
   };
 
   const displayJobs  = results ? results.jobs : backgroundJobs;
-  const filtersActive  = minScore !== 0 || dateFilter !== 'any';
+  const filtersActive  = minScore !== 0;
 
   const now = Date.now();
   const filteredJobs = displayJobs
@@ -486,12 +505,8 @@ export default function App() {
       if (!ts || isNaN(ts)) return true;
       return (now - ts) <= DATE_WINDOWS_MS[dateFilter as keyof typeof DATE_WINDOWS_MS];
     })
-    .sort((a: Job, b: Job) => {
-      if (sortBy === 'match_score') return b.match_score - a.match_score;
-      const aVal = (a as unknown as Record<string, string>)[sortBy] || '';
-      const bVal = (b as unknown as Record<string, string>)[sortBy] || '';
-      return aVal.localeCompare(bVal);
-    });
+    .filter(filterExpired(expiredUrls))
+    .sort(makeFreshnessComparator(sortBy));
 
   return (
     <Routes>
@@ -527,7 +542,7 @@ export default function App() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   background: showFilters ? 'var(--washi-deep)' : 'var(--paper)',
-                  border: '1px solid var(--rule)', padding: '9px 14px', borderRadius: 2,
+                  border: '1px solid var(--rule)', padding: '9px 14px', borderRadius: 0,
                   cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--sumi)',
                 }}
               >
@@ -541,33 +556,17 @@ export default function App() {
               </button>
 
               {showFilters && (
-                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3, zIndex: 50, width: 208, padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 0, zIndex: 50, width: 208, padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {/* Match */}
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--sumi-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>Match</p>
-                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 0, overflow: 'hidden' }}>
                       {[{ v: 0, l: 'All' }, { v: 60, l: '60%+' }, { v: 80, l: '80%+' }].map(({ v, l }, i, arr) => (
                         <button key={v} onClick={() => setMinScore(v)}
                           style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter',
                             borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none', border: 'none',
                             background: minScore === v ? 'var(--sumi)' : 'transparent',
                             color: minScore === v ? 'var(--paper)' : 'var(--sumi-mute)',
-                          }}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {/* Posted */}
-                  <div>
-                    <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--sumi-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>Posted</p>
-                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
-                      {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }, i, arr) => (
-                        <button key={v} onClick={() => setDateFilter(v)}
-                          style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter',
-                            borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none', border: 'none',
-                            background: dateFilter === v ? 'var(--sumi)' : 'transparent',
-                            color: dateFilter === v ? 'var(--paper)' : 'var(--sumi-mute)',
                           }}>
                           {l}
                         </button>
@@ -584,7 +583,7 @@ export default function App() {
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 background: 'var(--sumi)', color: 'var(--washi-soft)', border: 'none',
-                padding: '9px 14px', borderRadius: 2, cursor: 'pointer',
+                padding: '9px 14px', borderRadius: 0, cursor: 'pointer',
                 fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
               }}
             >
@@ -603,7 +602,7 @@ export default function App() {
               parsedResume={parsedResume}
               onNewSearch={handleReset}
               onLogin={handleLogin}
-              onSignOut={() => { setUser(null); setRevealed(false); setResults(null); }}
+              onSignOut={() => { setUser(null); setRevealed(false); setResults(null); setExpiredUrls(new Set()); }}
             />
           </div>
         </div>
@@ -612,6 +611,23 @@ export default function App() {
         {revealed && displayJobs.length > 0 && (
           <div style={{ borderTop: '1px solid var(--rule)', background: 'var(--washi-deep)' }}>
             <div style={{ maxWidth: 1320, margin: '0 auto', padding: '8px 40px', display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+              {/* Date filter */}
+              <span className="tm-mono" style={{ letterSpacing: '0.18em', textTransform: 'uppercase', fontSize: 10, color: 'var(--sumi-mute)' }}>Posted</span>
+              {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }) => (
+                <button key={v} onClick={() => setDateFilter(v)}
+                  style={{
+                    background: dateFilter === v ? 'var(--sumi)' : 'transparent',
+                    color: dateFilter === v ? 'var(--paper)' : 'var(--sumi)',
+                    border: dateFilter === v ? '1px solid var(--sumi)' : '1px solid var(--rule)',
+                    padding: '4px 10px', borderRadius: 0, cursor: 'pointer',
+                    fontFamily: 'Inter', fontSize: 11, fontWeight: 500,
+                  }}>
+                  {l}
+                </button>
+              ))}
+              {/* Divider */}
+              <div style={{ width: 1, height: 16, background: 'var(--rule)', margin: '0 2px' }} />
+              {/* Sort */}
               <span className="tm-mono" style={{ letterSpacing: '0.18em', textTransform: 'uppercase', fontSize: 10, color: 'var(--sumi-mute)' }}>Sort</span>
               {SORT_OPTIONS.map(({ value, label }) => (
                 <button key={value} onClick={() => setSortBy(value)}
@@ -619,7 +635,7 @@ export default function App() {
                     background: sortBy === value ? 'var(--sumi)' : 'transparent',
                     color: sortBy === value ? 'var(--paper)' : 'var(--sumi)',
                     border: sortBy === value ? '1px solid var(--sumi)' : '1px solid var(--rule)',
-                    padding: '4px 10px', borderRadius: 2, cursor: 'pointer',
+                    padding: '4px 10px', borderRadius: 0, cursor: 'pointer',
                     fontFamily: 'Inter', fontSize: 11, fontWeight: 500,
                   }}>
                   {label}
@@ -628,7 +644,7 @@ export default function App() {
               {results && (
                 <button onClick={handleRefreshJobs} disabled={refreshing}
                   title="Clear cache and re-fetch fresh job results"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 2, cursor: 'pointer',
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 0, cursor: 'pointer',
                     border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', fontFamily: 'Inter', fontSize: 11,
                     opacity: refreshing ? 0.5 : 1 }}>
                   <RefreshCw size={10} strokeWidth={2} className={refreshing ? 'animate-spin' : ''} />
@@ -642,7 +658,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 relative">
         {error && (
-          <div className="mb-4 max-w-xl mx-auto rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 flex items-start justify-between gap-3 relative z-50">
+          <div className="mb-4 max-w-xl mx-auto bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 flex items-start justify-between gap-3 relative z-50">
             <span className="break-all">{error}</span>
             <button onClick={() => setError('')} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -653,7 +669,7 @@ export default function App() {
         )}
 
         {notice && (
-          <div className="mb-4 max-w-xl mx-auto rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-start justify-between gap-3 relative z-50">
+          <div className="mb-4 max-w-xl mx-auto bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-start justify-between gap-3 relative z-50">
             <span>{notice}</span>
             <button onClick={() => setNotice('')} className="shrink-0 text-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -670,7 +686,7 @@ export default function App() {
               <span aria-hidden="true" style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 width: 34, height: 34, background: 'var(--shu)', color: 'var(--paper)',
-                borderRadius: 2, fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
+                borderRadius: 0, fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
                 fontSize: 18, letterSpacing: '-0.02em', flexShrink: 0,
               }}>T</span>
               <h1 className="tm-mincho" style={{ margin: 0, fontSize: 30, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
@@ -729,14 +745,14 @@ export default function App() {
                   <div className="flex items-start gap-3 mb-4">
                     <div className="w-10 h-10 bg-gray-200 shrink-0" />
                     <div className="flex-1 pt-1">
-                      <div className="h-3.5 bg-gray-200 rounded w-3/4 mb-2" />
-                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="h-3.5 bg-gray-200 w-3/4 mb-2" />
+                      <div className="h-3 bg-gray-100 w-1/2" />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <div className="h-3 bg-gray-100 rounded w-full" />
-                    <div className="h-3 bg-gray-100 rounded w-4/5" />
-                    <div className="h-3 bg-gray-100 rounded w-2/3" />
+                    <div className="h-3 bg-gray-100 w-full" />
+                    <div className="h-3 bg-gray-100 w-4/5" />
+                    <div className="h-3 bg-gray-100 w-2/3" />
                   </div>
                 </div>
               ))}
@@ -830,7 +846,7 @@ export default function App() {
       </main>
 
       {syncToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-full border border-green-200 bg-green-50 text-green-700 text-xs font-medium pointer-events-none">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 border border-green-200 bg-green-50 text-green-700 text-xs font-medium pointer-events-none">
           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>

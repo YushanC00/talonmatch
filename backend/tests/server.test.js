@@ -196,6 +196,75 @@ describe('POST /api/match', () => {
   });
 });
 
+// ── POST /api/jobs/verify ───────────────────────────────────────────────────
+
+describe('POST /api/jobs/verify', () => {
+  let fetchSpy;
+
+  beforeEach(() => {
+    fetchSpy = jest.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it('returns empty results for empty urls array', async () => {
+    const res = await request(app).post('/api/jobs/verify').send({ urls: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.results).toEqual({});
+  });
+
+  it('returns 400 when urls array exceeds 50', async () => {
+    const urls = Array.from({ length: 51 }, (_, i) => `https://example.com/job/${i}`);
+    const res = await request(app).post('/api/jobs/verify').send({ urls });
+    expect(res.status).toBe(400);
+  });
+
+  it('marks url expired when HEAD returns 4xx', async () => {
+    const url = 'https://example.com/job/404';
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 404 });
+    const res = await request(app).post('/api/jobs/verify').send({ urls: [url] });
+    expect(res.status).toBe(200);
+    expect(res.body.results[url]).toBe('expired');
+  });
+
+  it('marks url expired when HEAD 200 but body contains expired keyword', async () => {
+    const url = 'https://example.com/job/closed';
+    fetchSpy
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => 'This job is no longer accepting applications.' });
+    const res = await request(app).post('/api/jobs/verify').send({ urls: [url] });
+    expect(res.status).toBe(200);
+    expect(res.body.results[url]).toBe('expired');
+  });
+
+  it('marks url active when HEAD 200 and body is clean', async () => {
+    const url = 'https://example.com/job/open';
+    fetchSpy
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => 'Senior Software Engineer — Apply now!' });
+    const res = await request(app).post('/api/jobs/verify').send({ urls: [url] });
+    expect(res.status).toBe(200);
+    expect(res.body.results[url]).toBe('active');
+  });
+
+  it('marks url unknown when fetch throws', async () => {
+    const url = 'https://example.com/job/timeout';
+    fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    const res = await request(app).post('/api/jobs/verify').send({ urls: [url] });
+    expect(res.status).toBe(200);
+    expect(res.body.results[url]).toBe('unknown');
+  });
+
+  it('strips non-http(s) urls — ftp url absent from results', async () => {
+    const res = await request(app).post('/api/jobs/verify').send({ urls: ['ftp://example.com/job'] });
+    expect(res.status).toBe(200);
+    expect(res.body.results['ftp://example.com/job']).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 // ── POST /api/tailor-resume ─────────────────────────────────────────────────
 
 describe('POST /api/tailor-resume', () => {

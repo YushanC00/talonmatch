@@ -30,6 +30,17 @@ app.use((req, res, next) => {
   next();
 });
 
+const verifyStats = { requests: 0, urlsChecked: 0, expiredFound: 0, unknownCount: 0 };
+
+const EXPIRED_KEYWORDS = [
+  'no longer accepting',
+  'position has been filled',
+  'job has expired',
+  'listing is closed',
+  'this job is no longer',
+  'application closed',
+];
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -191,7 +202,7 @@ app.get('/api/jobs/search', async (req, res) => {
     const jobsWithDates = jobs.map(job => {
       const valid = job.postedAt && !isNaN(new Date(job.postedAt).getTime());
       if (valid) return job;
-      const daysAgo = Math.floor(Math.random() * 30);
+      const daysAgo = 3 + Math.floor(Math.random() * 27);
       return { ...job, postedAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString() };
     });
     res.json({ count: jobsWithDates.length, jobs: jobsWithDates });
@@ -263,7 +274,7 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
     const rankedWithDates = ranked.map(job => {
       const hasValidDate = job.postedAt && !isNaN(new Date(job.postedAt).getTime());
       if (hasValidDate) return job;
-      const daysAgo = Math.floor(Math.random() * 30);
+      const daysAgo = 3 + Math.floor(Math.random() * 27);
       return { ...job, postedAt: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString() };
     });
 
@@ -390,6 +401,49 @@ app.post('/api/tailor-resume', async (req, res) => {
     clearInterval(keepalive);
     if (!res.writableEnded) res.end();
   }
+});
+
+app.post('/api/jobs/verify', async (req, res) => {
+  const { urls } = req.body;
+  if (!Array.isArray(urls)) return res.status(400).json({ error: 'urls must be an array' });
+  if (urls.length > 50) return res.status(400).json({ error: 'max 50 urls per request' });
+
+  const validUrls = urls.filter(u => typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
+  if (validUrls.length === 0) return res.json({ results: {} });
+
+  verifyStats.requests++;
+  verifyStats.urlsChecked += validUrls.length;
+
+  const results = {};
+
+  await Promise.allSettled(validUrls.map(async (url) => {
+    try {
+      const headRes = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000), redirect: 'follow' });
+      if (!headRes.ok || headRes.status >= 400) {
+        results[url] = 'expired';
+        verifyStats.expiredFound++;
+        return;
+      }
+      try {
+        const getRes = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) });
+        const body = (await getRes.text()).toLowerCase();
+        if (EXPIRED_KEYWORDS.some(kw => body.includes(kw))) {
+          results[url] = 'expired';
+          verifyStats.expiredFound++;
+        } else {
+          results[url] = 'active';
+        }
+      } catch {
+        results[url] = 'unknown';
+        verifyStats.unknownCount++;
+      }
+    } catch {
+      results[url] = 'unknown';
+      verifyStats.unknownCount++;
+    }
+  }));
+
+  res.json({ results });
 });
 
 app.delete('/api/cache/clear', (req, res) => {

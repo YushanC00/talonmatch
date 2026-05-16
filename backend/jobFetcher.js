@@ -35,8 +35,9 @@ function cacheSet(query, data) {
   }
 }
 
-function randomPostedAt(maxDaysAgo = 30) {
-  const ms = Math.floor(Math.random() * maxDaysAgo * 24 * 60 * 60 * 1000);
+function randomPostedAt(minDaysAgo = 3, maxDaysAgo = 30) {
+  const range = (maxDaysAgo - minDaysAgo) * 24 * 60 * 60 * 1000;
+  const ms = minDaysAgo * 24 * 60 * 60 * 1000 + Math.floor(Math.random() * range);
   return new Date(Date.now() - ms).toISOString();
 }
 

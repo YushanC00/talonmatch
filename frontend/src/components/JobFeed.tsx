@@ -27,7 +27,7 @@ export default function JobFeed({ jobs = [], totalJobs = 0, parsedResume, resume
   if (!jobs.length) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+        <div className="w-16 h-16 bg-gray-100 flex items-center justify-center mb-4">
           <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
