@@ -63,12 +63,12 @@ _Focus: AI prose humanization, high-velocity curation UX, and localized style le
 
 ### 📦 Sprint 3: The Design Control Center (The Brand Builder)
 
-- [ -] **Interactive Design DNA Panel:**
+- [ ] **Interactive Design DNA Panel:**
   - **Live Style Overrides:** Connect your active toolbar state variables to functional inputs (color pickers, typography dropdowns) to allow manual UI theme modifications that cascade instantly to the PDF layout.
 
 ### 📦 Sprint 4: The Autopilot Protocol (Full Automation)
 
-- [ ] **Editorial Feedback Loop (The Learning Layer):**
+- [x] **Editorial Feedback Loop (The Learning Layer):**
   - **Decision Telemetry Tracker:** Wire the `[✓]` and `[✕]` buttons to log your specific phrasing rejections and acceptances to a localized data collector.
   - **Dynamic Few-Shot Injection:** Feed historical preference data back into the single-pass tailoring engine, allowing the AI to dynamically adapt to your personal writing voice over time.
 - [ ] **Autosend Protocol (The Auto-Apply Engine):**

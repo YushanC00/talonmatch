@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import * as Diff from 'diff';
 import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
+import { logDecision } from '../utils/telemetry';
 import { saveApplication } from '../lib/saveApplication';
 import type { Job, TailoredSection, ParsedResume, NarrativeInsight } from '../types';
 
@@ -247,10 +248,18 @@ function TailoredResumeDrawerInner({
   }, [data]);
 
   const getReview = (k: string) => reviews[k] || null;
-  const setReview = (k: string, status: string | null) => setReviews(prev => {
-    if (status === null) { const n = { ...prev }; delete n[k]; return n; }
-    return { ...prev, [k]: status };
-  });
+  const setReview = (k: string, status: string | null, textPair?: { original: string; tailored: string }) => {
+    const prev = reviews[k] ?? null;
+    if (textPair && status === 'accepted' && prev !== 'accepted') {
+      logDecision({ key: k, decision: 'accepted', original: textPair.original, tailored: textPair.tailored, jobTitle, company });
+    } else if (textPair && status === null && prev === 'accepted') {
+      logDecision({ key: k, decision: 'rejected', original: textPair.original, tailored: textPair.tailored, jobTitle, company });
+    }
+    setReviews(prev => {
+      if (status === null) { const n = { ...prev }; delete n[k]; return n; }
+      return { ...prev, [k]: status };
+    });
+  };
 
   const summaryObj: SummaryObj = isNewFormat
     ? { original_text: '', tailored_text: (data.summary as string) || '', change_reason: '' }
@@ -1051,8 +1060,8 @@ function TailoredResumeDrawerInner({
                                         </p>
                                       </div>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
-                                        <button onClick={() => setReview(rkey, status === 'accepted' ? null : 'accepted')} title="Accept" style={{ width: 28, height: 28, borderRadius: 2, border: `1px solid ${status === 'accepted' ? 'var(--moss)' : 'var(--rule)'}`, background: status === 'accepted' ? 'var(--moss)' : 'transparent', color: status === 'accepted' ? 'var(--paper)' : 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✓</button>
-                                        <button onClick={() => setReview(rkey, null)} title="Revert to diff" style={{ width: 28, height: 28, borderRadius: 2, border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✕</button>
+                                        <button onClick={() => setReview(rkey, status === 'accepted' ? null : 'accepted', { original: item.original ?? '', tailored: item.tailored ?? '' })} title="Accept" style={{ width: 28, height: 28, borderRadius: 2, border: `1px solid ${status === 'accepted' ? 'var(--moss)' : 'var(--rule)'}`, background: status === 'accepted' ? 'var(--moss)' : 'transparent', color: status === 'accepted' ? 'var(--paper)' : 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✓</button>
+                                        <button onClick={() => setReview(rkey, null, { original: item.original ?? '', tailored: item.tailored ?? '' })} title="Revert to diff" style={{ width: 28, height: 28, borderRadius: 2, border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✕</button>
                                         {editBtn(() => openEdit(rkey, currText))}
                                       </div>
                                     </div>
@@ -1202,7 +1211,7 @@ function TailoredResumeDrawerInner({
                         const { added: aw, removed: rw } = computeDiffCounts(summaryObj.original_text, summaryObj.tailored_text);
                         return (
                           <ReviewCard status={summaryStatus}
-                            onAccept={() => setReview('summary', summaryStatus === 'accepted' ? null : 'accepted')}
+                            onAccept={() => setReview('summary', summaryStatus === 'accepted' ? null : 'accepted', { original: summaryObj.original_text, tailored: summaryObj.tailored_text })}
                             onCancel={() => setReview('summary', summaryStatus === 'cancelled' ? null : 'cancelled')}
                             addedCount={aw} removedCount={rw}>
                             <p className="tm-mincho" style={{ margin: 0, fontSize: 15, lineHeight: 1.85, color: 'var(--sumi)' }}>
@@ -1266,7 +1275,7 @@ function TailoredResumeDrawerInner({
                                 return (
                                   <div key={j} style={{ position: 'relative' }}>
                                     <ReviewCard status={status}
-                                      onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
+                                      onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted', { original: orig, tailored })}
                                       onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}
                                       addedCount={isNew ? 0 : aw} removedCount={isNew ? 0 : rw}>
                                       {isNew ? (
@@ -1329,7 +1338,7 @@ function TailoredResumeDrawerInner({
                             return (
                               <div key={j} style={{ position: 'relative' }}>
                                 <ReviewCard status={status}
-                                  onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted')}
+                                  onAccept={() => setReview(rkey, status === 'accepted' ? null : 'accepted', { original: orig, tailored })}
                                   onCancel={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')}
                                   addedCount={isNew ? 0 : aw} removedCount={isNew ? 0 : rw}>
                                   {isNew ? (

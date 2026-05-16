@@ -379,8 +379,20 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
 
             <div>
               {isTailored ? (
-                url && (
-                  <div className="action-fade-in" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <div className="action-fade-in" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    onClick={handleTailor}
+                    title="Edit tailored resume"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 28, height: 28, background: 'transparent', color: 'var(--sumi-mute)',
+                      border: '1px solid var(--rule)', borderRadius: 2, cursor: 'pointer',
+                    }}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <path d="M11 2 L14 5 L5 14 H2 V11 Z M9 4 L12 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                  {url && (
                     <a
                       href={url}
                       target="_blank"
@@ -396,8 +408,8 @@ export default function JobCard({ job, parsedResume, resumeLoading = false, resu
                         <path d="M3 6 H9 M7 4 L9 6 L7 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </a>
-                  </div>
-                )
+                  )}
+                </div>
               ) : (() => {
                 const hasResume = parsedResume?.experience?.length > 0;
                 // Only permanently disable once the DB fetch has settled with no result
