@@ -52,4 +52,11 @@ describe('auditorAgent', () => {
     expect(out.content[0].tailored).toBe('Using React to build UIs.');
     expect(out.content[0].original).toBe('Leveraging React to build UIs.');
   });
+
+  test('strips "synergy" (singular)', () => {
+    const section = makeSection([makeItem('Built through synergy and collaboration.')]);
+    const { section: out, patched } = auditSection(section);
+    expect(out.content[0].tailored).toBe('Built through and collaboration.');
+    expect(patched).toBe(true);
+  });
 });

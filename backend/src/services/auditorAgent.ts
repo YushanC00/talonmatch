@@ -15,7 +15,7 @@ const FLUFF_PATTERNS: [RegExp, string][] = [
   [/\bspearheading\b/gi, 'leading'],
   [/\bspearheads\b/gi, 'leads'],
   [/\bspearhead\b/gi, 'lead'],
-  [/\bsynergi(?:es|y)\b/gi, ''],
+  [/\bsynerg(?:y|ies)\b/gi, ''],
   [/\bcutting[- ]edge\b/gi, 'modern'],
   [/\bpassionate(?:ly)?\b/gi, ''],
   [/\bresults?[- ]driven\b/gi, ''],
@@ -24,7 +24,7 @@ const FLUFF_PATTERNS: [RegExp, string][] = [
 ];
 
 function applyFluffFilter(text: string): { result: string; changed: boolean } {
-  const result = FLUFF_PATTERNS
+  const substituted = FLUFF_PATTERNS
     .reduce((t, [re, sub]) => {
       return t.replace(re, (match, offset) => {
         if (!sub) return sub;
@@ -36,10 +36,9 @@ function applyFluffFilter(text: string): { result: string; changed: boolean } {
         }
         return sub;
       });
-    }, text)
-    .replace(/  +/g, ' ')
-    .trim();
-  return { result, changed: result !== text };
+    }, text);
+  const result = substituted.replace(/  +/g, ' ').trim();
+  return { result, changed: substituted !== text };
 }
 
 export function auditSection(section: TailoredSection): AuditResult {
