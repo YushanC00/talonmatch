@@ -45,9 +45,10 @@ function classifyFontProfile(fontNames) {
 
 function detectColumns(xValues, pageWidth) {
   if (xValues.length < 20) return 1;
-  // Count items starting in the right 40-90% of page (clear right-column territory)
-  const rightColItems = xValues.filter(x => x > pageWidth * 0.40 && x < pageWidth * 0.90).length;
-  // If >12% of items start in right half, strong signal for 2-col layout
+  // Count items starting in the right 28-90% of page — 0.28 catches narrow sidebars
+  // that place their right column starting around 28-35% of page width
+  const rightColItems = xValues.filter(x => x > pageWidth * 0.28 && x < pageWidth * 0.90).length;
+  // If >12% of items start in right territory, strong signal for 2-col layout
   if (rightColItems / xValues.length > 0.12) return 2;
   return 1;
 }
@@ -115,11 +116,15 @@ function classifySectionColumns(sections, pageWidth) {
     if (gap > maxGap) { maxGap = gap; splitAfter = i; }
   }
 
-  // Require gap > 20% of page width, centred in the middle 50% of the page
+  // Require a meaningful gap, split point inside the left 75% of page.
+  // pw fallback to 612 guards against NaN from some PDFs.
+  // Thresholds lowered to catch narrow sidebars (splitX ~17%, gap ~18%):
+  //   maxGap: 0.20→0.15, splitX lower bound: 0.25→0.15
+  const pw = (pageWidth && isFinite(pageWidth)) ? pageWidth : 612;
   const splitX = splitAfter >= 0 ? (sorted[splitAfter].x + sorted[splitAfter + 1].x) / 2 : 0;
-  const isReal = maxGap > pageWidth * 0.20
-    && splitX > pageWidth * 0.25
-    && splitX < pageWidth * 0.75;
+  const isReal = maxGap > pw * 0.15
+    && splitX > pw * 0.15
+    && splitX < pw * 0.75;
 
   if (!isReal) return { left: [], right: sections.map(s => s.title) };
 

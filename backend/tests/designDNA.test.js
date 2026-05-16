@@ -104,6 +104,19 @@ describe('detectColumns', () => {
     const xs = [...Array(15).fill(50), ...Array(10).fill(400)];
     expect(detectColumns(xs, 612)).toBe(2);
   });
+
+  it('returns 2 for narrow sidebar layout (right col starts at ~29% of page)', () => {
+    // Simulates Robert Cooper / Amsterdam templates where sidebar puts right
+    // column text starting around x=175 on a 612pt page (~28.6%)
+    const xs = [...Array(15).fill(50), ...Array(10).fill(175)];
+    expect(detectColumns(xs, 612)).toBe(2);
+  });
+
+  it('returns 1 when items cluster only in far-left margin area', () => {
+    // All items at x=50-70, well below even the new 28% threshold
+    const xs = Array(25).fill(null).map((_, i) => 50 + (i % 5));
+    expect(detectColumns(xs, 612)).toBe(1);
+  });
 });
 
 // ── detectBullet ──────────────────────────────────────────────────────────────
@@ -218,6 +231,45 @@ describe('classifySectionColumns', () => {
     const result = classifySectionColumns(sections, 612);
     expect(result.left).toContain('Skills');
     expect(result.right).toContain('Experience');
+  });
+
+  it('splits narrow sidebar layout (splitX ~17% of page width)', () => {
+    // Robert Cooper: left sidebar x≈90-97, right main content x≈206
+    // splitX = (97+206)/2 = 151.5 ≈ 24.8% of 612; gap=109 ≈ 17.8%
+    // Old thresholds (gap>20%, splitX>25%) rejected this — new ones (15%,15%) accept it
+    const sections = [
+      { title: 'SKILLS', x: 90 },
+      { title: 'HOBBIES', x: 95 },
+      { title: 'EXPERIENCE', x: 206 },
+      { title: 'EDUCATION', x: 206 },
+    ];
+    const result = classifySectionColumns(sections, 612);
+    expect(result.left).toContain('SKILLS');
+    expect(result.left).toContain('HOBBIES');
+    expect(result.right).toContain('EXPERIENCE');
+    expect(result.right).toContain('EDUCATION');
+  });
+
+  it('handles NaN pageWidth gracefully (falls back to 612)', () => {
+    const sections = [
+      { title: 'SKILLS', x: 90 },
+      { title: 'EXPERIENCE', x: 250 },
+    ];
+    // NaN pageWidth should not throw; should still split or degrade gracefully
+    const result = classifySectionColumns(sections, NaN);
+    expect(Array.isArray(result.left)).toBe(true);
+    expect(Array.isArray(result.right)).toBe(true);
+  });
+
+  it('does not split when both columns are crammed in the left margin', () => {
+    // Gap of 10pt at x=60 → splitX=55 < 15% of 612 (91.8) → no real split
+    const sections = [
+      { title: 'Summary', x: 50 },
+      { title: 'Skills', x: 60 },
+      { title: 'Experience', x: 65 },
+    ];
+    const result = classifySectionColumns(sections, 612);
+    expect(result.left).toHaveLength(0);
   });
 });
 
