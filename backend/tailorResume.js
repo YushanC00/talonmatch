@@ -1,5 +1,5 @@
 const Groq = require('groq-sdk');
-const { validateAndPatchSection } = require('./src/workers/streamTailor');
+const { validateAndPatchSection, buildStaticEducationSection, isEducationTitle } = require('./src/workers/streamTailor');
 const { auditSection } = require('./src/services/auditorAgent');
 
 let _client = null;
@@ -13,6 +13,8 @@ function getClient() {
 
 const DYNAMIC_SYSTEM = `ATS resume writer. Tailor candidate resume to JD. Return JSON only — no prose.
 
+PERSONA: Write as an elite, understated systems engineer explaining a code change to a senior peer in a pull request. Practical, blunt, zero emotional padding. Replace evaluative language ("passionate leader", "dynamic professional") with concrete role descriptions ("systems engineer", "backend developer"). Assume the reader is technical and unimpressed by adjectives.
+
 INTEGRITY (non-negotiable):
 • Never invent metrics, dates, skills, or companies not in source text
 • TECHNOLOGY LOCK: Only name tools/languages/frameworks that appear in CANDIDATE RESUME skills or experience. If JD mentions C++, Go, Rust, etc. but candidate resume does not — NEVER write those in tailored output. This applies to every section including Summary.
@@ -22,12 +24,18 @@ INTEGRITY (non-negotiable):
 • Match seniority — never upgrade title tier (junior stays junior)
 • No buzzwords: leverage, spearheaded, synergy, cutting-edge, passionate, results-driven
 
+VOICE:
+• Every bullet must begin with a direct, past-tense action verb that reflects real human work: Built, Led, Designed, Wrote, Scaled, Resolved, Migrated, Debugged, Shipped, Refactored, Deployed, Integrated, Automated, Reviewed, Reduced, Improved, Replaced, Extended, Configured, Tested, Documented, Optimized
+• BANNED SENTENCE STARTERS: Never begin a bullet with Leveraging, Spearheading, Driving, Ensuring, Fostering, Capitalizing, Optimizing — these are AI tells; use a concrete verb instead
+• Active voice. No passive constructions ("was responsible for", "helped to", "assisted in")
+
 CONTENT:
 • Bullets: Action Verb + Result, max 200 chars. Quantify only if metric exists in original
 • ALL experience bullets must appear — omitting any is a critical failure
 • Skills hard: top 10 from candidate's list by JD relevance. No invented skills
 • Skills soft: max 5, only when evidenced in experience text
 • Plain text — no markdown, no Unicode
+• Never split a word mid-string or append a stray hyphen when rewriting a phrase
 
 IDs: summary-0 | we-{co_slug}-{N} | proj-{slug}-0 | skills-hard-0 / skills-soft-0 | edu-{N}
 Work Experience label = "Role @ Company (Period)" on every item.
@@ -333,11 +341,15 @@ function normalizeSectionItem(raw, parsedResume) {
   const rawText        = getRawResumeText(parsedResume);
   const candidateSkills = buildCandidateSkillSet(parsedResume);
   const isExp          = /experience/i.test(raw.title);
+  const isSkills       = /skills?|tech|stack|tool/i.test(raw.title);
   const content = (raw.content || []).map(item => {
     let tailored = item.tailored || '';
     tailored = stripHallucinatedSkillClaims(tailored, candidateSkills);
     tailored = stripHallucinatedMetrics(tailored, rawText);
     if (isExp) tailored = truncateItem(tailored);
+    // Safety net: prevent empty tailored from causing full strikethrough in diff view.
+    // Skills items are exempt — empty tailored means the LLM intentionally removed them.
+    if (!tailored && !isSkills) tailored = item.original || '';
     return {
       id:        item.id       || '',
       label:     item.label    || '',
@@ -365,6 +377,13 @@ async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
   const parser = new SectionStreamParser();
   let usage = null;
 
+  // Education bypasses the LLM entirely — emit source data immediately.
+  const staticEdu = buildStaticEducationSection(parsedResume);
+  if (staticEdu) {
+    console.log(`[tailor] emit "${staticEdu.title}" (static bypass)`);
+    yield { type: 'section', section: staticEdu };
+  }
+
   const stream = await getClient().chat.completions.create({
     model:           'llama-3.1-8b-instant',
     messages: [
@@ -387,6 +406,8 @@ async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
     if (rawCapture.length < 600) rawCapture += delta;
 
     for (const rawSec of parser.push(delta)) {
+      // Education was already emitted as a static bypass above — drop any LLM version.
+      if (isEducationTitle(rawSec?.title || '')) continue;
       const raw = normalizeSectionItem(rawSec, parsedResume);
       if (raw) {
         const layer1 = validateAndPatchSection(raw, parsedResume);
@@ -407,6 +428,7 @@ async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
   const ptok = usage?.prompt_tokens     || 0;
   const ctok = usage?.completion_tokens || 0;
   console.log(`[tailor] stream done | prompt:${ptok} completion:${ctok}`);
+
   yield { type: 'done', usage: { promptTokens: ptok, completionTokens: ctok } };
 }
 

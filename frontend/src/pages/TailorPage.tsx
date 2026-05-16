@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
 import TailoredResumeDrawer from '../components/TailoredResumeDrawer';
-import type { Job, ParsedResume, TailoredResume, TailoredSection } from '../types';
+import type { Job, ParsedResume, TailoredResume, TailoredSection, NarrativeInsight } from '../types';
 
 interface TailorPageProps {
   parsedResume: ParsedResume;
@@ -96,6 +96,7 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
   const [tailored,  setTailored]    = useState<TailoredResume | null>(null);
   const [tailorError, setTailorError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
+  const [narrativeInsight, setNarrativeInsight] = useState<NarrativeInsight | null>(null);
 
   // If no job in state, bounce back
   useEffect(() => {
@@ -110,6 +111,7 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
     setTailoring(true);
     setTailored({ _version: 4, sections: buildInitialSections(resume) });
     setTailorError('');
+    setNarrativeInsight(null);
 
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), 120_000);
@@ -169,6 +171,8 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
                 }
                 return { _version: 4, sections: [...existing, event.section] };
               });
+            } else if (event.type === 'narrative') {
+              setNarrativeInsight(event.insight);
             } else if (event.type === 'error') {
               throw new Error(event.message);
             } else if (event.type === 'done') {
@@ -252,6 +256,7 @@ export default function TailorPage({ parsedResume: propResume, user, onCommitTai
           onCommit={handleCommit}
           streaming={tailoring}
           pageMode={true}
+          narrativeInsight={narrativeInsight ?? undefined}
         />
       )}
     </div>

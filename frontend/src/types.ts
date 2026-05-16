@@ -88,10 +88,19 @@ export interface TailoredResume {
   sections: TailoredSection[]
 }
 
+// ── Narrative insight ──────────────────────────────────────────────────────────
+
+export interface NarrativeInsight {
+  status: 'aligned' | 'pivot_required'
+  strategyTitle?: string
+  strategyMessage?: string
+}
+
 // ── SSE event types ────────────────────────────────────────────────────────────
 
 export type SSEEvent =
   | { type: 'section'; section: TailoredSection }
+  | { type: 'narrative'; insight: NarrativeInsight }
   | { type: 'error'; message: string }
   | { type: 'done' }
 

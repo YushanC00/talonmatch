@@ -42,7 +42,7 @@ _Focus: AI prose humanization, high-velocity curation UX, and localized style le
 - [x] **Progressive Stream Hydration & Experience Chunking:**
   - **Parallel Company-Level Workers:** Segment the 17 Work Experience bullets by company nodes to execute concurrent backend requests.
   - **Sequential UI Hydration:** Stream completed chunks back to the client via SSE, prioritizing current roles first (like _Proposify_) to keep initial page paint under 500ms.
-- [ ] **Stream-Level Layer 1 Static Guardrails (`src/workers/streamTailor.ts`):**
+- [x] **Stream-Level Layer 1 Static Guardrails (`src/workers/streamTailor.ts`):**
   - **Synchronous Circuit Breaker:** Embed synchronous TypeScript validation loops directly inside the streaming worker chunk processing block to automate Section 2 & 3 of `tailoring_audit.md` and Section 3 of the `Professional Output Audit` (checking for intact section titles, strict array length parity, and exact character matching for protected Rule 11 dates/companies).
   - **Silent Patch Re-Queue:** Intercept broken chunks locally within 2ms. If an individual company node draft alters structural text flags or corrupts string delta highlights (`~~strikethrough~~` and `++addition++`), drop it and trigger a silent re-generation backend loop before delivering that specific chunk across the network.
 - [ ] **Stream-Level Layer 2 Semantic Evaluation (`src/services/auditorAgent.ts`):**

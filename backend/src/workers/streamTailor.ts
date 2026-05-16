@@ -64,6 +64,10 @@ interface SourceContext {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function cleanTitle(title: string): string {
+  return title.replace(/\s*\(\s*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function slug(s: string): string {
   return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 15);
 }
@@ -184,7 +188,7 @@ function buildFallback(aiTitle: string, ctx: SourceContext): TailoredSection {
   const type  = classifySection(aiTitle);
   const entry = type ? ctx.byType.get(type) : undefined;
   return {
-    title:    entry?.title ?? aiTitle,
+    title:    cleanTitle(entry?.title ?? aiTitle),
     rationale: '',
     content:  entry?.content ?? [],
   };
@@ -227,6 +231,21 @@ function guardSyntaxIntegrity(section: TailoredSection): boolean {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+export function isEducationTitle(title: string): boolean {
+  return classifySection(title) === 'education';
+}
+
+export function buildStaticEducationSection(resume: ParsedResume): TailoredSection | null {
+  const ctx   = buildSourceContext(resume);
+  const entry = ctx.byType.get('education');
+  if (!entry || entry.content.length === 0) return null;
+  return {
+    title:    entry.title,
+    rationale: '',
+    content:  entry.content.map(item => ({ ...item, tailored: item.original, rationale: '' })),
+  };
+}
+
 export function validateAndPatchSection(
   section: TailoredSection,
   parsedResume: ParsedResume,
@@ -253,5 +272,7 @@ export function validateAndPatchSection(
     return { section: buildFallback(section.title, ctx), patched: true, reason: 'syntax-integrity' };
   }
 
-  return { section, patched: false };
+  const cleanedTitle = cleanTitle(section.title);
+  const cleanedSection = cleanedTitle !== section.title ? { ...section, title: cleanedTitle } : section;
+  return { section: cleanedSection, patched: false };
 }

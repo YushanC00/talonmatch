@@ -4,7 +4,7 @@ import * as Diff from 'diff';
 import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
 import { saveApplication } from '../lib/saveApplication';
-import type { Job, TailoredSection, ParsedResume } from '../types';
+import type { Job, TailoredSection, ParsedResume, NarrativeInsight } from '../types';
 
 interface DrawerInnerProps {
   data: Record<string, unknown> & { _version?: number; sections?: TailoredSection[] }
@@ -23,6 +23,7 @@ interface DrawerInnerProps {
   savedMatchScore?: number | null
   streaming?: boolean
   pageMode?: boolean
+  narrativeInsight?: NarrativeInsight
 }
 
 type LegacyBullet   = { original_text?: string; tailored_text?: string; is_new_suggestion?: boolean }
@@ -142,6 +143,7 @@ function TailoredResumeDrawerInner({
   savedMatchScore = null,
   streaming = false,
   pageMode = false,
+  narrativeInsight,
 }: DrawerInnerProps) {
   const requirements    = job?.requirements_array || [];
   const totalRequirements = requirements.length;
@@ -162,6 +164,8 @@ function TailoredResumeDrawerInner({
     const id = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  const [narrativeDismissed, setNarrativeDismissed] = useState(false);
 
   const handleClose = useCallback(() => {
     setVisible(false);
@@ -314,6 +318,20 @@ function TailoredResumeDrawerInner({
         }).length;
       }, 0)
     : 0;
+
+  const allV4Accepted = isV4 && v4TotalChanges > 0 && v4AcceptedChanges === v4TotalChanges;
+
+  const handleAcceptAll = () => {
+    const next: Record<string, string> = { ...reviews };
+    for (const sec of v4Sections) {
+      for (const item of (sec.content || [])) {
+        if (item.tailored !== item.original) {
+          next[`${sec.title}:${item.id}`] = 'accepted';
+        }
+      }
+    }
+    setReviews(next);
+  };
 
   // Base score: same value as JobCard — backend match_score with 99-cap when skills missing
   const rawJobScore = savedMatchScore ?? job?.match_score ?? 0;
@@ -727,6 +745,30 @@ function TailoredResumeDrawerInner({
             />
           )}
 
+          {/* Narrative pivot banner */}
+          {narrativeInsight?.status === 'pivot_required' && !narrativeDismissed && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 20px', background: 'rgba(168,94,62,0.06)', borderBottom: '1px solid rgba(168,94,62,0.22)', flexShrink: 0 }}>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 2, color: 'var(--shu)' }}>
+                <path d="M8 2 L14 13 H2 Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none"/>
+                <line x1="8" y1="6.5" x2="8" y2="9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                <circle cx="8" cy="11.2" r="0.65" fill="currentColor"/>
+              </svg>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span className="tm-mono" style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--shu)', fontWeight: 700 }}>
+                  {narrativeInsight.strategyTitle}
+                </span>
+                <p style={{ margin: '2px 0 0', fontFamily: 'Inter', fontSize: 12, lineHeight: 1.55, color: 'var(--sumi-mute)' }}>
+                  {narrativeInsight.strategyMessage}
+                </p>
+              </div>
+              <button
+                onClick={() => setNarrativeDismissed(true)}
+                aria-label="Dismiss pivot strategy"
+                style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sumi-mute)', fontSize: 16, lineHeight: 1, padding: '0 2px', marginTop: -1 }}
+              >×</button>
+            </div>
+          )}
+
           {/* HEADER */}
           <header style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'flex-start', gap: 16, flexShrink: 0, ...(pageMode ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--paper)' } : {}) }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -841,6 +883,20 @@ function TailoredResumeDrawerInner({
             )}
           </AnimatePresence>
 
+          {/* V4 action toolbar — accept-all */}
+          {isV4 && v4TotalChanges > 0 && !streaming && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '7px 28px', borderBottom: '1px solid var(--rule)', background: 'var(--washi-soft)', flexShrink: 0 }}>
+              <button
+                onClick={handleAcceptAll}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', border: `1px solid ${allV4Accepted ? 'var(--moss-soft)' : 'var(--rule)'}`, borderRadius: 2, background: allV4Accepted ? 'rgba(90,122,78,0.06)' : 'var(--paper)', color: allV4Accepted ? 'var(--moss-deep)' : 'var(--sumi-mute)', cursor: allV4Accepted ? 'default' : 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600 }}
+              >
+                {allV4Accepted
+                  ? <><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6 L5 9 L10 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg> All accepted</>
+                  : 'Accept all'}
+              </button>
+            </div>
+          )}
+
           {/* BODY */}
           <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', flex: 1, ...(pageMode ? {} : { overflow: 'hidden' }) }}>
 
@@ -917,8 +973,10 @@ function TailoredResumeDrawerInner({
 
                   {/* Dynamic sections from AI */}
                   {v4Sections.map(section => {
-                    const isSkillsSec = /^skills/i.test(section.title);
+                    const isSkillsSec = /skills?|tech|stack|tool/i.test(section.title);
                     const items = section.content || [];
+                    // Skip skills sections that have no visible content (LLM intentionally removed)
+                    if (isSkillsSec && !items.some(item => (item.tailored || '').split(/,\s*/).filter(Boolean).length > 0)) return null;
                     return (
                       <section key={section.title} ref={el => { sectionRefs.current[section.title] = el; }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -934,7 +992,7 @@ function TailoredResumeDrawerInner({
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                             {items.map((item, itemIdx) => {
                               const isSoft = /soft/i.test(item.label) || /soft/i.test(item.id);
-                              const skillList = (item.tailored || item.original || '').split(/,\s*/).filter(Boolean);
+                              const skillList = (item.tailored || '').split(/,\s*/).filter(Boolean);
                               if (!skillList.length) return null;
                               return (
                                 <div key={itemIdx}>
@@ -981,20 +1039,20 @@ function TailoredResumeDrawerInner({
                                       {saveBtn(() => saveEdit(rkey))}
                                     </div>
                                   ) : (
-                                    <div className="tailor-bullet-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', border: `1px solid ${status === 'accepted' ? 'var(--moss-soft)' : status === 'cancelled' ? 'var(--shu-soft)' : 'var(--rule)'}`, borderRadius: 3, background: status === 'accepted' ? 'rgba(90,122,78,0.04)' : status === 'cancelled' ? 'rgba(168,94,62,0.04)' : 'var(--paper)', transition: 'border-color 200ms, background 200ms' }}>
-                                      <span style={{ marginTop: 9, width: 4, height: 4, borderRadius: '50%', background: status === 'accepted' ? 'var(--moss-soft)' : status === 'cancelled' ? 'var(--shu-soft)' : 'var(--rule)', flexShrink: 0 }} />
+                                    <div className="tailor-bullet-row" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', border: `1px solid ${status === 'accepted' ? 'var(--moss-soft)' : 'var(--rule)'}`, borderRadius: 3, background: status === 'accepted' ? 'rgba(90,122,78,0.04)' : 'var(--paper)', transition: 'border-color 200ms, background 200ms' }}>
+                                      <span style={{ marginTop: 9, width: 4, height: 4, borderRadius: '50%', background: status === 'accepted' ? 'var(--moss-soft)' : 'var(--rule)', flexShrink: 0 }} />
                                       <div style={{ flex: 1 }}>
                                         <p style={{ fontFamily: 'Inter', fontSize: 14, lineHeight: 1.7, color: 'var(--sumi)', margin: 0, whiteSpace: 'pre-wrap' }}>
                                           {editValues[rkey] !== undefined
                                             ? editValues[rkey]
-                                            : status === 'cancelled'
-                                            ? item.original
+                                            : status === 'accepted'
+                                            ? item.tailored
                                             : <DiffText original={item.original} tailored={item.tailored} />}
                                         </p>
                                       </div>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
                                         <button onClick={() => setReview(rkey, status === 'accepted' ? null : 'accepted')} title="Accept" style={{ width: 28, height: 28, borderRadius: 2, border: `1px solid ${status === 'accepted' ? 'var(--moss)' : 'var(--rule)'}`, background: status === 'accepted' ? 'var(--moss)' : 'transparent', color: status === 'accepted' ? 'var(--paper)' : 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✓</button>
-                                        <button onClick={() => setReview(rkey, status === 'cancelled' ? null : 'cancelled')} title="Revert" style={{ width: 28, height: 28, borderRadius: 2, border: `1px solid ${status === 'cancelled' ? 'var(--shu)' : 'var(--rule)'}`, background: status === 'cancelled' ? 'var(--shu)' : 'transparent', color: status === 'cancelled' ? 'var(--paper)' : 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✕</button>
+                                        <button onClick={() => setReview(rkey, null)} title="Revert to diff" style={{ width: 28, height: 28, borderRadius: 2, border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✕</button>
                                         {editBtn(() => openEdit(rkey, currText))}
                                       </div>
                                     </div>

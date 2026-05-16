@@ -8,6 +8,7 @@ const { parseResumeAI } = require('./resumeParserAI');
 const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { streamTailorResume } = require('./tailorResume');
+const { evaluateNarrative } = require('./src/services/narrativeAuditor');
 const { clearCache } = require('./jobFetcher');
 const { extractDesignDNA } = require('./designDNA');
 
@@ -211,6 +212,17 @@ app.post('/api/tailor-resume', async (req, res) => {
       if (res.writableEnded || ac.signal.aborted) break;
       res.write(`data: ${JSON.stringify(event)}\n\n`);
       if (typeof res.flush === 'function') res.flush();
+    }
+
+    if (!res.writableEnded && !ac.signal.aborted) {
+      try {
+        const insight = evaluateNarrative(parsed_resume, job_description);
+        console.log(`[narrativeAuditor] status:${insight.status}`);
+        res.write(`data: ${JSON.stringify({ type: 'narrative', insight })}\n\n`);
+        if (typeof res.flush === 'function') res.flush();
+      } catch (err) {
+        console.error('[narrativeAuditor] failed:', err);
+      }
     }
   } catch (err) {
     const isAbort = err.name === 'AbortError' || err.message?.toLowerCase().includes('aborted');
