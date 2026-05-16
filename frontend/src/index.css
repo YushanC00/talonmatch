@@ -71,3 +71,8 @@ body {
 .modal-fade-in > div:last-child {
   animation: modal-fade-in 0.18s ease-out forwards;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

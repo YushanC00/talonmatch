@@ -83,8 +83,10 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
   try {
     // Parse resume text + extract design DNA in parallel
     const pdfData = await pdfParse(req.file.buffer);
+    // Strip U+00CF (Ï) from line-starts: pdfjs encodes ● as this when font uses custom glyph map
+    const resumeText = pdfData.text.replace(/^Ï\s*/gm, '');
     const [resume, styleConfig] = await Promise.all([
-      parseResumeAI(pdfData.text),
+      parseResumeAI(resumeText),
       extractDesignDNA(req.file.buffer).catch(err => {
         console.warn('[designDNA] extraction failed (non-fatal):', err.message);
         return null;

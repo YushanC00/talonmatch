@@ -30,25 +30,29 @@ _Focus: Data accuracy and core tailoring logic._
 
 ## 📅 Phase 2: Autopilot & Branding (The Professional)
 
-_Focus: High-end output and automation._
+_Focus: AI prose humanization, high-velocity curation UX, and localized style learning loops._
 
-- [ ] **Design DNA Extraction:** Analyze original PDF structure (Fonts/Layout) for `style_config`.
-- [ ] **Dynamic PDF Generation:** Use `react-pdf` to mirror the user's original design perfectly.
-- [ ] **Autosend Protocol:** Set "Autosend" rules (e.g., Match Score > 85%, Salary floor).
-- [ ] **The "Dirty" Apply:** One-click button to save state and open job URL for instant pasting.
-- [ ] **Timeline View:** Dashboard for application history, timestamps, and status tracking.
+- [x] **Design DNA Extraction Fallback:** Implemented default fallback to `sans-serif` to eliminate the "Unknown (不明)" UI glitch and protect PDF generation font metrics.
 
----
+### 📦 Sprint 1: Workstation Architecture & Voice Polish (The Immediate Wins)
+
+- [ ] **Structural Workstation Migration (Goodbye Modal):**
+  - **Dedicated Route Switch:** Move the editor from an overlay modal to a dedicated full-page view (`/tailor/:jobId`) to fix scroll contexts and restore native left-sidebar anchor navigation.
+  - **Sticky Telemetry Header:** Pin the primary action bar (`85% match`, `[Apply]`, `[↓ PDF]`) to the top of the page viewport using `position: sticky;` so your scores never vanish during deep scrolls.
+- [ ] **Progressive Stream Hydration (Latency Fix):**
+  - **Asynchronous Chunking:** Refactor the backend optimization pipeline into isolated endpoints. Load the core metrics and summary blocks first to achieve sub-500ms initial page paint, then stream individual experience cards sequentially.
+- [ ] **Asynchronous Experience Chunking:**
+  - **Parallel Company-Level Workers:** Segment the 17 Work Experience bullets by company nodes. Fire asynchronous parallel requests to the LLM instead of a monolithic block.
+  - **Sequential UI Hydration:** Stream completed chunks back to the client via SSE, prioritizing current roles first so the top of the workstation renders under 500ms while older history loads gracefully in the background.
+
+...
 
 ## 📅 Phase 3: Monetization & Limitation (The Business)
 
 _Goal: Protect token margins and define Free vs. Pro tiers._
 
+- [ ] **Pre-Token Credit Validation:** Force background workers to check `daily_credits` balances _prior_ to initiating LLM tailoring pipelines to eliminate background margin bleed.
 - [ ] **Daily Strike Quota:** Implement `daily_credits` (3 per day) for Free tier users.
-- [ ] **Feature Gating:**
-  - **Free:** Standard "Talon" PDF template.
-  - **Pro:** "Design DNA" Mirroring + Seniority Audit (Executive language).
-- [ ] **Usage Meter:** Visual "Strikes Remaining" badge in the [Review Station Drawer](http://localhost:5173/).
 
 ---
 

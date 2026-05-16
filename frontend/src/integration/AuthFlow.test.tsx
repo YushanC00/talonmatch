@@ -1,8 +1,13 @@
 // @ts-nocheck — integration test: vi.mocked casting not needed in test infra
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import JobCard from '../components/JobCard';
 import AuthModal from '../components/AuthModal';
+
+function renderCard(ui) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 // ── Supabase mock ──────────────────────────────────────────────────────────────
 vi.mock('../lib/supabase', () => ({
@@ -72,8 +77,7 @@ beforeEach(() => {
 
 describe('Auth Gate — Tailor Resume button', () => {
   it('unauthenticated click shows auth modal with job-specific copy, NOT the tailor editor', async () => {
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -94,8 +98,7 @@ describe('Auth Gate — Tailor Resume button', () => {
   });
 
   it('authenticated user proceeds directly without auth modal', () => {
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -114,8 +117,7 @@ describe('Auth Gate — Tailor Resume button', () => {
     const onLogin = vi.fn();
     mockSignedIn();
 
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -148,8 +150,7 @@ describe('Auth Gate — Tailor Resume button', () => {
 describe('Auth Gate — localStorage state persistence', () => {
   it('saves parsedResume to localStorage when opening auth modal', () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem');
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -173,8 +174,7 @@ describe('Auth Gate — localStorage state persistence', () => {
 
   it('auto-triggers tailoring for matching pendingTailorJobUrl when logged in', () => {
     const onPendingTailorHandled = vi.fn();
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -191,8 +191,7 @@ describe('Auth Gate — localStorage state persistence', () => {
 
   it('does NOT auto-trigger for a non-matching pendingTailorJobUrl', () => {
     const onPendingTailorHandled = vi.fn();
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={TEST_JOB}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
@@ -316,8 +315,7 @@ describe('Honesty Patch — cards after auth', () => {
       match_score: 100,
       requirements_array: ['Figma', 'Kotlin', 'Android SDK'],
     };
-    render(
-      <JobCard
+    renderCard(<JobCard
         job={contradictoryJob}
         parsedResume={PARSED_RESUME}
         onViewDetails={vi.fn()}
