@@ -1,5 +1,6 @@
 const Groq = require('groq-sdk');
 const { validateAndPatchSection } = require('./src/workers/streamTailor');
+const { auditSection } = require('./src/services/auditorAgent');
 
 let _client = null;
 function getClient() {
@@ -388,9 +389,15 @@ async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
     for (const rawSec of parser.push(delta)) {
       const raw = normalizeSectionItem(rawSec, parsedResume);
       if (raw) {
-        const { section } = validateAndPatchSection(raw, parsedResume);
-        console.log(`[tailor] emit "${section.title}" +${Date.now() - t0}ms`);
-        yield { type: 'section', section };
+        const layer1 = validateAndPatchSection(raw, parsedResume);
+        let layer2Section = layer1.section;
+        try {
+          layer2Section = auditSection(layer1.section).section;
+        } catch (err) {
+          console.error('[auditorAgent] failed, using layer1 output:', err);
+        }
+        console.log(`[tailor] emit "${layer2Section.title}" +${Date.now() - t0}ms`);
+        yield { type: 'section', section: layer2Section };
       }
     }
   }
