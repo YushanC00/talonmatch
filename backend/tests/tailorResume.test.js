@@ -630,7 +630,10 @@ describe('streamTailorResume — branch coverage', () => {
   it('passes per-item rationale through content items', async () => {
     const section = {
       title: 'Work Experience', rationale: 'Strong frontend fit',
-      content: [{ id: 'we-acme-0', label: 'Dev @ Acme (2020–Now)', original: 'Built API.', tailored: 'Built scalable API.', rationale: 'highlights scalability' }],
+      content: [
+        { id: 'we-acme-0', label: 'Engineer @ Acme (2020–2023)', original: 'Built API.', tailored: 'Built scalable API.', rationale: 'highlights scalability' },
+        { id: 'we-acme-1', label: '', original: 'Wrote tests.', tailored: 'Wrote unit and integration tests.', rationale: '' },
+      ],
     };
     const fullJson = `{"_version":4,"sections":[${JSON.stringify(section)}]}`;
 

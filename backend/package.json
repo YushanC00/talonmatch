@@ -3,15 +3,18 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "tsx server.js",
+    "dev": "nodemon --exec tsx server.js",
     "test": "jest --testPathPatterns='tests/' --runInBand",
     "test:watch": "jest --testPathPatterns='tests/' --watch",
     "lint": "eslint *.js",
     "coverage": "jest --testPathPatterns='tests/' --runInBand --coverage"
   },
   "jest": {
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.tsx?$": "<rootDir>/jest-esbuild-transform.cjs"
+    }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
@@ -30,6 +33,7 @@
     "globals": "^17.6.0",
     "jest": "^30.4.2",
     "nodemon": "^3.1.14",
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "tsx": "^4.22.0"
   }
 }

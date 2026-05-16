@@ -1,4 +1,5 @@
 const Groq = require('groq-sdk');
+const { validateAndPatchSection } = require('./src/workers/streamTailor');
 
 let _client = null;
 function getClient() {
@@ -385,8 +386,9 @@ async function* streamTailorResume({ parsedResume, jobDescription, signal }) {
     if (rawCapture.length < 600) rawCapture += delta;
 
     for (const rawSec of parser.push(delta)) {
-      const section = normalizeSectionItem(rawSec, parsedResume);
-      if (section) {
+      const raw = normalizeSectionItem(rawSec, parsedResume);
+      if (raw) {
+        const { section } = validateAndPatchSection(raw, parsedResume);
         console.log(`[tailor] emit "${section.title}" +${Date.now() - t0}ms`);
         yield { type: 'section', section };
       }
