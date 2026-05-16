@@ -139,8 +139,16 @@ function resolveSizes(sc: StyleConfig | null | undefined) {
   };
 }
 
-function resolveMargins(sc: StyleConfig | null | undefined) {
-  const raw  = sc?.layout?.marginLeft ?? 57;
+function resolveMargins(sc: StyleConfig | null | undefined, isDarkSidebar = false) {
+  const raw = sc?.layout?.marginLeft ?? 57;
+  // For dark-sidebar 2-col layouts the DNA marginLeft is the left edge of
+  // continuation pages (single-col overflow), not the sidebar inner padding.
+  // Use it symmetrically as the page right margin; sidebar inner padding gets
+  // a fixed small value so the dark panel isn't eaten by whitespace.
+  if (isDarkSidebar) {
+    const pageMargin = Math.min(Math.max(Math.round(raw * 0.75), 28), 72);
+    return { top: 40, bottom: 40, left: 28, right: pageMargin };
+  }
   const side = Math.min(Math.max(Math.round(raw * 0.75), 28), 72);
   return { top: 44, bottom: 44, left: side, right: side };
 }
@@ -307,13 +315,12 @@ export default function ResumePDF({ sections, parsedResume, reviews, editValues 
   const sc      = parsedResume?.style_config;
   const fonts   = resolveFonts(sc);
   const sizes   = resolveSizes(sc);
-  const margins = resolveMargins(sc);
+  const sidebar = resolveSidebarColors(sc);
+  const isDarkSidebar = sidebar.sidebarBg !== null;
+  const margins = resolveMargins(sc, isDarkSidebar);
   const bullet      = sc?.bullets ?? '•';
   const headerAlign = sc?.layout?.headerAlign ?? 'left';
   const isMultiCol  = sc?.layout?.columns === 2;
-
-  const sidebar = resolveSidebarColors(sc);
-  const isDarkSidebar = sidebar.sidebarBg !== null;
   // When sidebar is dark, keep main column neutral so accent doesn't clash
   const accent  = isDarkSidebar ? '#333333' : (sc?.accentColor ?? '#333333');
 
