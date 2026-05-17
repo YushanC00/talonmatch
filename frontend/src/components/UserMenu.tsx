@@ -1,15 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import type React from 'react';
-import { Search, Settings, LogOut, CircleUser } from 'lucide-react';
+import { Settings, LogOut, Upload, LayoutDashboard, ListChecks, BarChart2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import type { User, Subscription } from '@supabase/supabase-js';
 import type { ParsedResume } from '../types';
 
-// ── Shared sub-components ─────────────────────────────────────────────────────
 
 function GoogleIcon() {
   return (
-    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+    <svg width="14" height="14" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -18,87 +18,77 @@ function GoogleIcon() {
   );
 }
 
-function AvatarCircle({ src, initials, online = false }: { src?: string; initials: string; online?: boolean }) {
+function AvatarSquare({ src, initials, size = 38 }: { src?: string; initials: string; size?: number }) {
   const [failed, setFailed] = useState(false);
-
-  const dot = online && (
-    <span style={{
-      position: 'absolute', bottom: -2, right: -2,
-      width: 10, height: 10,
-      background: 'var(--moss)', borderRadius: '50%',
-      border: '2px solid var(--paper)',
-    }} />
-  );
 
   if (!src || failed) {
     return (
       <div
         data-testid="user-avatar"
         style={{
-          width: 38, height: 38, borderRadius: '50%',
+          width: size, height: size, flexShrink: 0,
           background: 'var(--sumi)', color: 'var(--paper)',
           display: 'grid', placeItems: 'center',
-          fontFamily: 'Inter', fontSize: 14, fontWeight: 600,
-          border: '2px solid var(--paper)',
-          boxShadow: '0 0 0 1px var(--rule)',
-          position: 'relative', flexShrink: 0, userSelect: 'none',
+          fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
+          fontSize: size * 0.42, letterSpacing: '-0.01em',
+          userSelect: 'none',
         }}
       >
-        {initials && initials !== '?' ? initials : <CircleUser size={18} />}
-        {dot}
+        {initials && initials !== '?' ? initials : (
+          <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+        )}
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
-      <img
-        data-testid="user-avatar"
-        src={src}
-        alt={initials}
-        onError={() => setFailed(true)}
-        style={{
-          width: 38, height: 38, borderRadius: '50%', objectFit: 'cover',
-          border: '2px solid var(--paper)', boxShadow: '0 0 0 1px var(--rule)',
-          display: 'block',
-        }}
-        referrerPolicy="no-referrer"
-      />
-      {dot}
-    </div>
+    <img
+      data-testid="user-avatar"
+      src={src}
+      alt={initials}
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, objectFit: 'cover', display: 'block', flexShrink: 0 }}
+      referrerPolicy="no-referrer"
+    />
   );
 }
 
-function MenuItem({ icon: Icon, label, onClick, variant = 'default' }: {
-  icon: React.ElementType; label: string; onClick?: () => void; variant?: string;
+function MenuItem({ icon: Icon, label, onClick, danger = false }: {
+  icon: React.ElementType; label: string; onClick?: () => void; danger?: boolean;
 }) {
-  const colorClass = variant === 'danger'
-    ? 'text-red-500 hover:bg-red-50 hover:text-red-600'
-    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900';
-
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors cursor-pointer ${colorClass}`}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '9px 16px', background: 'transparent', border: 'none',
+        cursor: 'pointer', textAlign: 'left',
+        color: danger ? 'var(--shu)' : 'var(--sumi-mute)',
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+        letterSpacing: '0.08em',
+      }}
+      onMouseEnter={e => (e.currentTarget.style.background = 'var(--washi)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
     >
-      <Icon size={13} strokeWidth={2} className="shrink-0" />
+      <Icon size={12} strokeWidth={2} style={{ flexShrink: 0 }} />
       {label}
     </button>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, onLogin }: {
+export default function UserMenu({ user, parsedResume, onSignOut, onNewResume, onLogin }: {
   user?: User | null;
   parsedResume?: ParsedResume | null;
   onSignOut?: () => void;
-  onNewSearch?: () => void;
+  onNewResume?: () => void;
   onLogin?: (user: User) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
 
   const userName   = user?.user_metadata?.full_name ?? user?.email ?? '';
   const userEmail  = user?.email ?? '';
@@ -119,13 +109,10 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  // ── Guest sign-in ───────────────────────────────────────────────────────────
-
   const handleGuestSignIn = async () => {
     setOpen(false);
     setSigningIn(true);
 
-    // Persist resume data across the OAuth redirect (cleared on SIGNED_IN)
     if (parsedResume && (parsedResume.skills?.length ?? 0) > 0) {
       localStorage.setItem('talonmatch_pending_resume', JSON.stringify({
         skills: parsedResume.skills,
@@ -140,8 +127,6 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
 
     if (error) { setSigningIn(false); return; }
 
-    // Production: page redirects — code below never runs.
-    // Tests: signInWithOAuth mocked, so we listen for the session here.
     const subRef: { current: Subscription | null } = { current: null };
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
@@ -152,8 +137,6 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
     });
     subRef.current = subscription;
   };
-
-  // ── Signed-out sign-out ─────────────────────────────────────────────────────
 
   const handleSignOut = async () => {
     setOpen(false);
@@ -167,59 +150,78 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
     const skillCount = parsedResume?.skills?.length ?? 0;
 
     return (
-      <div className="relative" ref={menuRef}>
+      <div style={{ position: 'relative' }} ref={menuRef}>
         <button
           onClick={() => setOpen(o => !o)}
           disabled={signingIn}
-          className="border-2 border-dashed border-gray-300 hover:border-green-400 focus:outline-none focus:border-green-400 transition-all cursor-pointer disabled:opacity-50"
           aria-label="Guest menu"
           aria-expanded={open}
           data-testid="guest-avatar-trigger"
+          style={{
+            width: 38, height: 38, flexShrink: 0,
+            background: 'var(--washi)', border: '1px dashed var(--sumi-mute)',
+            display: 'grid', placeItems: 'center',
+            cursor: signingIn ? 'not-allowed' : 'pointer',
+            opacity: signingIn ? 0.5 : 1,
+          }}
         >
-          <div className="w-9 h-9 bg-gray-50 flex items-center justify-center">
-            {signingIn
-              ? <span className="w-4 h-4 border-2 border-gray-300 border-t-green-600 animate-spin" />
-              : <CircleUser size={18} className="text-gray-400" />
-            }
-          </div>
+          {signingIn ? (
+            <span style={{
+              width: 14, height: 14, border: '2px solid var(--rule)',
+              borderTopColor: 'var(--shu)', borderRadius: '50%',
+              display: 'inline-block', animation: 'spin 0.7s linear infinite',
+            }} />
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--sumi-mute)" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+            </svg>
+          )}
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-2.5 w-64 bg-white border border-gray-100 overflow-hidden z-50">
+          <div style={{
+            position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+            width: 240, background: 'var(--paper)', border: '1px solid var(--rule)',
+            zIndex: 50,
+          }}>
             {/* Header */}
-            <div className="px-4 pt-3.5 pb-3 border-b border-gray-100">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Guest Session</p>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--rule)' }}>
+              <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.22em', color: 'var(--sumi-faint)', textTransform: 'uppercase', marginBottom: 4 }}>
+                Guest Session
+              </div>
               {skillCount > 0 && (
-                <p className="text-xs text-amber-600 mt-1">
-                  <span className="font-semibold">{skillCount} skills</span> detected — sign in to save
-                </p>
+                <div style={{ fontSize: 11, color: 'var(--shu)', fontFamily: '"JetBrains Mono", monospace' }}>
+                  <strong>{skillCount} skills</strong> detected — sign in to save
+                </div>
               )}
             </div>
 
             {/* Google sign-in */}
-            <div className="p-3">
+            <div style={{ padding: '10px 12px' }}>
               <button
                 onClick={handleGuestSignIn}
-                className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors cursor-pointer"
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 10, padding: '9px 16px',
+                  border: '1px solid var(--rule)', background: 'var(--washi)',
+                  color: 'var(--sumi)', cursor: 'pointer',
+                  fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+                  letterSpacing: '0.08em',
+                }}
               >
                 <GoogleIcon />
-                Sign in to Save Skills
+                Sign in to save skills
               </button>
             </div>
 
-            {/* New Search */}
-            {onNewSearch && (
-              <>
-                <div className="border-t border-gray-100" />
-                <div className="py-1">
-                  <MenuItem
-                    icon={Search}
-                    label="New Search"
-                    onClick={() => { setOpen(false); onNewSearch(); }}
-                  />
-                </div>
-              </>
-            )}
+            <div style={{ height: 1, background: 'var(--rule)' }} />
+            <MenuItem icon={Upload} label={parsedResume?.experience?.length ? 'Update résumé' : 'Upload résumé'} onClick={() => { setOpen(false); onNewResume?.(); }} />
+            <div style={{ height: 1, background: 'var(--rule)' }} />
+            <MenuItem icon={LayoutDashboard} label="Status board" onClick={() => { setOpen(false); navigate('/kanban'); }} />
+            <MenuItem icon={ListChecks} label="Strike log" onClick={() => { setOpen(false); navigate('/strikes'); }} />
+            <MenuItem icon={BarChart2} label="Match history" onClick={() => { setOpen(false); navigate('/history'); }} />
+            <div style={{ height: 1, background: 'var(--rule)' }} />
+            <MenuItem icon={Settings} label="Settings" onClick={() => { setOpen(false); navigate('/settings'); }} />
           </div>
         )}
       </div>
@@ -229,49 +231,48 @@ export default function UserMenu({ user, parsedResume, onSignOut, onNewSearch, o
   // ── Logged-in mode ──────────────────────────────────────────────────────────
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div style={{ position: 'relative' }} ref={menuRef}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="ring-2 ring-gray-200 ring-offset-2 hover:ring-green-300 focus:outline-none focus:ring-green-300 transition-all cursor-pointer"
         aria-label="User menu"
         aria-expanded={open}
+        style={{
+          padding: 0, background: 'none', border: 'none', cursor: 'pointer',
+          outline: open ? '2px solid var(--shu)' : '2px solid transparent',
+          outlineOffset: 2,
+        }}
       >
-        <AvatarCircle src={userAvatar} initials={initials} online={!!user} />
+        <AvatarSquare src={userAvatar} initials={initials} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2.5 w-56 bg-white border border-gray-100 overflow-hidden z-50">
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+          width: 220, background: 'var(--paper)', border: '1px solid var(--rule)',
+          zIndex: 50,
+        }}>
           {/* Identity header */}
-          <div className="flex items-center gap-3 px-3 py-3 border-b border-gray-100">
-            <AvatarCircle src={userAvatar} initials={initials} online={!!user} />
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate leading-tight">{userName}</p>
-              <p className="text-xs text-gray-400 truncate mt-0.5 leading-tight">{userEmail}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: '1px solid var(--rule)' }}>
+            <AvatarSquare src={userAvatar} initials={initials} size={32} />
+            <div style={{ minWidth: 0 }}>
+              <div className="tm-mincho" style={{ fontSize: 13, fontWeight: 600, color: 'var(--sumi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {userName}
+              </div>
+              <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.1em', color: 'var(--sumi-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 }}>
+                {userEmail}
+              </div>
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="py-1">
-            {onNewSearch && (
-              <MenuItem
-                icon={Search}
-                label="New Search"
-                onClick={() => { setOpen(false); onNewSearch(); }}
-              />
-            )}
-            <MenuItem
-              icon={Settings}
-              label="Profile Settings"
-              onClick={() => setOpen(false)}
-            />
-            <div className="border-t border-gray-100 my-1" />
-            <MenuItem
-              icon={LogOut}
-              label="Sign Out"
-              onClick={handleSignOut}
-              variant="danger"
-            />
-          </div>
+          <MenuItem icon={Upload} label={parsedResume?.experience?.length ? 'Update résumé' : 'Upload résumé'} onClick={() => { setOpen(false); onNewResume?.(); }} />
+          <div style={{ height: 1, background: 'var(--rule)' }} />
+          <MenuItem icon={LayoutDashboard} label="Status board" onClick={() => { setOpen(false); navigate('/kanban'); }} />
+          <MenuItem icon={ListChecks} label="Strike log" onClick={() => { setOpen(false); navigate('/strikes'); }} />
+          <MenuItem icon={BarChart2} label="Match history" onClick={() => { setOpen(false); navigate('/history'); }} />
+          <div style={{ height: 1, background: 'var(--rule)' }} />
+          <MenuItem icon={Settings} label="Settings" onClick={() => { setOpen(false); navigate('/settings'); }} />
+          <div style={{ height: 1, background: 'var(--rule)' }} />
+          <MenuItem icon={LogOut} label="Sign Out" onClick={handleSignOut} danger />
         </div>
       )}
     </div>

@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import type { UseAutosendResult } from '../hooks/useAutosend';
 
 interface AutosendPanelProps {
   autosend: UseAutosendResult;
+  isLoggedIn?: boolean;
 }
 
 const INTERVALS = [
@@ -11,54 +13,71 @@ const INTERVALS = [
   { value: 120, label: '2 hr' },
 ];
 
-export default function AutosendPanel({ autosend }: AutosendPanelProps) {
+export default function AutosendPanel({ autosend, isLoggedIn = true }: AutosendPanelProps) {
   const { settings, updateSettings, queued, isProcessing, sendAll, dismiss } = autosend;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 80);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div style={{
-      margin: '0 0 32px',
       border: '1px solid var(--rule)',
       background: 'var(--paper)',
-      fontFamily: 'Inter, sans-serif',
+      opacity: mounted ? 1 : 0,
+      transform: mounted ? 'translateY(0)' : 'translateY(-6px)',
+      transition: 'opacity 0.5s ease, transform 0.5s ease',
     }}>
-      {/* Header */}
+      {/* 2px accent strip */}
+      <div style={{ height: 2, background: 'var(--shu)' }} />
+      {/* Control bar */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 20px', borderBottom: '1px solid var(--rule)',
+        padding: '10px 20px', borderBottom: '1px solid var(--rule)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="tm-mono" style={{ fontSize: 10, letterSpacing: '0.22em', color: 'var(--shu)', textTransform: 'uppercase', fontWeight: 700 }}>
-            Autosend Protocol
-          </span>
           {isProcessing && (
             <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--sumi-mute)', textTransform: 'uppercase' }}>
-              · Processing…
+              Processing…
             </span>
           )}
         </div>
         {/* Enable toggle */}
-        <button
-          onClick={() => updateSettings({ enabled: !settings.enabled })}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: settings.enabled ? 'var(--shu)' : 'var(--washi)',
-            border: '1px solid var(--rule)', padding: '4px 12px', cursor: 'pointer',
-            fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 700,
-            letterSpacing: '0.14em', textTransform: 'uppercase',
-            color: settings.enabled ? 'var(--paper)' : 'var(--sumi)',
-          }}
-        >
-          <span style={{
-            display: 'inline-block', width: 7, height: 7,
-            borderRadius: '50%',
-            background: settings.enabled ? 'var(--paper)' : 'var(--sumi-mute)',
-          }} />
-          {settings.enabled ? 'Active' : 'Off'}
-        </button>
+        {isLoggedIn ? (
+          <button
+            onClick={() => updateSettings({ enabled: !settings.enabled })}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: settings.enabled ? 'var(--shu)' : 'var(--washi)',
+              border: '1px solid var(--rule)', padding: '4px 12px', cursor: 'pointer',
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.14em', textTransform: 'uppercase',
+              color: settings.enabled ? 'var(--paper)' : 'var(--sumi)',
+            }}
+          >
+            <span style={{
+              display: 'inline-block', width: 7, height: 7,
+              borderRadius: '50%',
+              background: settings.enabled ? 'var(--paper)' : 'var(--sumi-mute)',
+            }} />
+            {settings.enabled ? 'Active' : 'Off'}
+          </button>
+        ) : (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.18em', color: 'var(--sumi-faint)', textTransform: 'uppercase' }}>
+              Sign in to enable
+            </span>
+            <span style={{ width: 1, height: 12, background: 'var(--rule)' }} />
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--sumi-faint)" strokeWidth="2" strokeLinecap="round">
+              <rect x="3" y="11" width="18" height="11" rx="0" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* Guardrail settings */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--rule)', display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--rule)', display: 'flex', gap: 32, flexWrap: 'wrap', opacity: isLoggedIn ? 1 : 0.4, pointerEvents: isLoggedIn ? 'auto' : 'none' }}>
         {/* Score threshold */}
         <div>
           <label className="tm-mono" style={{ display: 'block', fontSize: 9, letterSpacing: '0.2em', color: 'var(--sumi-mute)', textTransform: 'uppercase', marginBottom: 8 }}>

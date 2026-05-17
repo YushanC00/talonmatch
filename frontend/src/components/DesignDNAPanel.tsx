@@ -188,14 +188,10 @@ function Cell({ label, labelJp, children, delay, visible, flex = 1, minWidth }: 
 
 export default function DesignDNAPanel({ config, candidateName }: Props) {
   const [mounted, setMounted] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 80);
     return () => clearTimeout(t);
   }, []);
-
-  if (dismissed) return null;
 
   const topFontName = config.fontNames[0]
     ? config.fontNames[0].replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -213,62 +209,24 @@ export default function DesignDNAPanel({ config, candidateName }: Props) {
         transition: 'opacity 0.5s ease, transform 0.5s ease',
       }}
     >
-      {/* Header strip */}
+      {/* 2px accent strip */}
+      <div style={{ height: 2, background: 'var(--moss)' }} />
+      {/* Control bar */}
       <div style={{
-        height: 2,
-        background: 'linear-gradient(to right, var(--shu) 0%, var(--shu) 40%, var(--moss) 40%, var(--moss) 60%, transparent 60%)',
-      }} />
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 20px', borderBottom: '1px solid var(--rule)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {candidateName && (
+            <span className="tm-mono" style={{ fontSize: 9, color: 'var(--sumi-faint)', letterSpacing: '0.08em' }}>
+              {candidateName}
+            </span>
+          )}
+        </div>
+        <div />
+      </div>
 
       <div style={{ padding: '14px 20px 16px' }}>
-        {/* Header row */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: 16,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* DNA icon */}
-            <svg width="16" height="18" viewBox="0 0 16 18" fill="none" aria-hidden="true">
-              <path d="M4 1 C 4 5 12 5 12 9 C 12 13 4 13 4 17" stroke="var(--shu)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-              <path d="M12 1 C 12 5 4 5 4 9 C 4 13 12 13 12 17" stroke="var(--moss)" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-              <line x1="5.5" y1="4.5" x2="10.5" y2="4.5" stroke="var(--rule)" strokeWidth="1" />
-              <line x1="4.5" y1="9"   x2="11.5" y2="9"   stroke="var(--rule)" strokeWidth="1" />
-              <line x1="5.5" y1="13.5" x2="10.5" y2="13.5" stroke="var(--rule)" strokeWidth="1" />
-            </svg>
-            <span className="tm-mono" style={{
-              fontSize: 9, letterSpacing: '0.28em', textTransform: 'uppercase',
-              color: 'var(--sumi-mute)', fontWeight: 700,
-            }}>
-              Design DNA
-            </span>
-            <span className="tm-jp" style={{ fontSize: 10, color: 'var(--rule)', opacity: 0.9 }}>紋様分析</span>
-            {candidateName && (
-              <>
-                <span style={{ width: 1, height: 12, background: 'var(--rule)', display: 'inline-block' }} />
-                <span className="tm-mono" style={{ fontSize: 9, color: 'var(--sumi-faint)', letterSpacing: '0.08em' }}>
-                  {candidateName}
-                </span>
-              </>
-            )}
-          </div>
-
-          <button
-            onClick={() => setDismissed(true)}
-            title="Dismiss"
-            aria-label="Dismiss Design DNA panel"
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--rule)', padding: 4, lineHeight: 1,
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--sumi-mute)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--rule)'; }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-
         {/* Data cells */}
         <div style={{ display: 'flex', gap: 0, alignItems: 'flex-start' }}>
 

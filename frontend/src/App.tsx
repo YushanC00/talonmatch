@@ -11,10 +11,14 @@ import { pullFromDb, pushToDb } from './lib/telemetrySync';
 import { resolveCity } from './utils/geolocation';
 import { makeFreshnessComparator, filterExpired } from './utils/jobSort';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
-import DesignDNAPanel from './components/DesignDNAPanel';
-import AutosendPanel from './components/AutosendPanel';
+import { recordTailoring } from './components/MatchHistoryView';
 import TailorPage from './pages/TailorPage';
+import SettingsPage from './pages/SettingsPage';
+import KanbanPage from './pages/KanbanPage';
+import StrikesPage from './pages/StrikesPage';
+import HistoryPage from './pages/HistoryPage';
 import { useAutosend } from './hooks/useAutosend';
+import { addStrike } from './utils/strikeLog';
 import './index.css';
 
 function TalonMark({ size = 36 }) {
@@ -128,11 +132,6 @@ const DATE_WINDOWS_MS = {
   '30d': 30 * 24 * 60 * 60 * 1000,
 };
 
-const SORT_OPTIONS = [
-  { value: 'match_score', label: 'Match' },
-  { value: 'company',     label: 'Company' },
-  { value: 'job_title',   label: 'Title' },
-];
 
 export default function App() {
   const location  = useLocation();
@@ -148,16 +147,16 @@ export default function App() {
   const [pendingTailorJobUrl, setPendingTailorJobUrl] = useState<string | null>(null);
 
   // Header filter / sort state (lifted from JobFeed)
-  const [minScore, setMinScore] = useState(0);
+  const [minScore, setMinScore] = useState(60);
   const [dateFilter, setDateFilter] = useState('30d');
   const [sortBy, setSortBy] = useState('match_score');
-  const [showFilters, setShowFilters] = useState(false);
-  const filtersRef = useRef<HTMLDivElement>(null);
 
   const [refreshing, setRefreshing] = useState(false);
   const [syncToast, setSyncToast] = useState(false);
   const [expiredUrls, setExpiredUrls] = useState<Set<string>>(new Set());
   const [tailoredJobIds, setTailoredJobIds] = useState<Set<string>>(new Set());
+  const [interviewingJobUrls, setInterviewingJobUrls] = useState<Set<string>>(new Set());
+
   const [parsedResume, setParsedResume] = useState<ParsedResume>({ skills: [], experience: [] });
   const [resumeLoading, setResumeLoading] = useState(false);
   // true once the DB fetch has settled (success or miss) — lets JobCard distinguish
@@ -226,6 +225,11 @@ export default function App() {
 
   const handleCommitTailoring = (jobId: string) => {
     setTailoredJobIds(prev => new Set([...prev, jobId]));
+    const job = [...(results?.jobs ?? []), ...backgroundJobs].find(j => j.url === jobId);
+    if (job) {
+      addStrike({ kind: 'tailor', jobTitle: job.job_title, company: job.company, jobUrl: jobId, message: 'Résumé tailored and committed', score: job.match_score });
+      recordTailoring(job, job.match_score);
+    }
   };
 
   // Pick up committedJobId when TailorPage navigates back
@@ -245,16 +249,6 @@ export default function App() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [revealed]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Click-outside closes sort popover
-  useEffect(() => {
-    if (!showFilters) return;
-    const handler = (e: MouseEvent) => {
-      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) setShowFilters(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showFilters]);
 
   // Geolocation + background job prefetch
   useEffect(() => {
@@ -500,7 +494,6 @@ export default function App() {
   };
 
   const displayJobs  = results ? results.jobs : backgroundJobs;
-  const filtersActive  = minScore !== 0;
 
   const autosend = useAutosend(
     displayJobs,
@@ -523,346 +516,282 @@ export default function App() {
     .sort(makeFreshnessComparator(sortBy));
 
   return (
-    <Routes>
-      <Route path="/tailor/:jobId" element={
-        <TailorPage parsedResume={parsedResume} user={user} onCommitTailoring={handleCommitTailoring} />
-      } />
-      <Route path="/" element={
     <div className="min-h-screen">
-      <SideOrnament side="left" />
-      <SideOrnament side="right" />
-
-      {/* Header */}
-      <header style={{ background: 'var(--paper)', borderBottom: '1px solid var(--rule)', position: 'sticky', top: 0, zIndex: 10 }}>
-
-        {/* Patterned shu stripe */}
-        <div style={{ height: 3, background: 'linear-gradient(to right, var(--shu) 0%, var(--shu) 24%, transparent 24%, transparent 30%, var(--shu) 30%, var(--shu) 32%, transparent 32%)' }} />
-
-        {/* Main row — wings layout: logo centered, controls right */}
-        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '16px 40px', position: 'relative', display: 'flex', alignItems: 'center' }}>
-
-          {/* Center: Logo — truly centered via absolute */}
-          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
-            <TalonMatchLogo />
-          </div>
-
-          {/* Right: controls (always visible) */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-
-            {/* Filters button + dropdown */}
-            <div style={{ position: 'relative' }} ref={filtersRef}>
-              <button
-                onClick={() => setShowFilters(f => !f)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  background: showFilters ? 'var(--washi-deep)' : 'var(--paper)',
-                  border: '1px solid var(--rule)', padding: '9px 14px', borderRadius: 0,
-                  cursor: 'pointer', fontFamily: 'Inter', fontSize: 12, fontWeight: 600, color: 'var(--sumi)',
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 3 H12 M4 7 H10 M6 11 H8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-                Filters
-                {filtersActive && (
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--shu)', display: 'inline-block', flexShrink: 0 }} />
-                )}
-              </button>
-
-              {showFilters && (
-                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 0, zIndex: 50, width: 208, padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {/* Match */}
-                  <div>
-                    <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--sumi-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>Match</p>
-                    <div style={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 0, overflow: 'hidden' }}>
-                      {[{ v: 0, l: 'All' }, { v: 60, l: '60%+' }, { v: 80, l: '80%+' }].map(({ v, l }, i, arr) => (
-                        <button key={v} onClick={() => setMinScore(v)}
-                          style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter',
-                            borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none', border: 'none',
-                            background: minScore === v ? 'var(--sumi)' : 'transparent',
-                            color: minScore === v ? 'var(--paper)' : 'var(--sumi-mute)',
-                          }}>
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+      {!location.pathname.startsWith('/tailor') && (
+        <header style={{ background: 'var(--paper)', borderBottom: '1px solid var(--rule)', position: 'sticky', top: 0, zIndex: 10 }}>
+      
+              {/* Patterned shu stripe */}
+              <div style={{ height: 3, background: 'linear-gradient(to right, var(--shu) 0%, var(--shu) 24%, transparent 24%, transparent 30%, var(--shu) 30%, var(--shu) 32%, transparent 32%)' }} />
+      
+              {/* Main row — wings layout: logo centered, controls right */}
+              <div style={{ maxWidth: 1320, margin: '0 auto', padding: '16px 40px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+      
+                {/* Center: Logo — truly centered via absolute */}
+                <div
+                  role="link"
+                  onClick={() => navigate('/')}
+                  style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', cursor: 'pointer' }}
+                >
+                  <TalonMatchLogo />
                 </div>
-              )}
-            </div>
-
-            {/* Upload résumé */}
-            <button
-              onClick={handleReset}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'var(--sumi)', color: 'var(--washi-soft)', border: 'none',
-                padding: '9px 14px', borderRadius: 0, cursor: 'pointer',
-                fontFamily: 'Inter', fontSize: 12, fontWeight: 600,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 6 L 6 3 L 9 6 M 6 3 V10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-              {parsedResume?.experience?.length > 0 ? 'Update résumé' : 'Upload résumé'}
-            </button>
-
-            {/* Vertical rule */}
-            <div style={{ width: 1, height: 28, background: 'var(--rule)' }} />
-
-            {/* Avatar */}
-            <UserMenu
-              user={user}
-              parsedResume={parsedResume}
-              onNewSearch={handleReset}
-              onLogin={handleLogin}
-              onSignOut={() => { setUser(null); setRevealed(false); setResults(null); setExpiredUrls(new Set()); }}
-            />
-          </div>
-        </div>
-
-        {/* Sort sub-bar — shown when jobs are revealed */}
-        {revealed && displayJobs.length > 0 && (
-          <div style={{ borderTop: '1px solid var(--rule)', background: 'var(--washi-deep)' }}>
-            <div style={{ maxWidth: 1320, margin: '0 auto', padding: '8px 40px', display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
-              {/* Date filter */}
-              <span className="tm-mono" style={{ letterSpacing: '0.18em', textTransform: 'uppercase', fontSize: 10, color: 'var(--sumi-mute)' }}>Posted</span>
-              {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }) => (
-                <button key={v} onClick={() => setDateFilter(v)}
-                  style={{
-                    background: dateFilter === v ? 'var(--sumi)' : 'transparent',
-                    color: dateFilter === v ? 'var(--paper)' : 'var(--sumi)',
-                    border: dateFilter === v ? '1px solid var(--sumi)' : '1px solid var(--rule)',
-                    padding: '4px 10px', borderRadius: 0, cursor: 'pointer',
-                    fontFamily: 'Inter', fontSize: 11, fontWeight: 500,
-                  }}>
-                  {l}
-                </button>
-              ))}
-              {/* Divider */}
-              <div style={{ width: 1, height: 16, background: 'var(--rule)', margin: '0 2px' }} />
-              {/* Sort */}
-              <span className="tm-mono" style={{ letterSpacing: '0.18em', textTransform: 'uppercase', fontSize: 10, color: 'var(--sumi-mute)' }}>Sort</span>
-              {SORT_OPTIONS.map(({ value, label }) => (
-                <button key={value} onClick={() => setSortBy(value)}
-                  style={{
-                    background: sortBy === value ? 'var(--sumi)' : 'transparent',
-                    color: sortBy === value ? 'var(--paper)' : 'var(--sumi)',
-                    border: sortBy === value ? '1px solid var(--sumi)' : '1px solid var(--rule)',
-                    padding: '4px 10px', borderRadius: 0, cursor: 'pointer',
-                    fontFamily: 'Inter', fontSize: 11, fontWeight: 500,
-                  }}>
-                  {label}
-                </button>
-              ))}
-              {results && (
-                <button onClick={handleRefreshJobs} disabled={refreshing}
-                  title="Clear cache and re-fetch fresh job results"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 0, cursor: 'pointer',
-                    border: '1px solid var(--rule)', background: 'transparent', color: 'var(--sumi-mute)', fontFamily: 'Inter', fontSize: 11,
-                    opacity: refreshing ? 0.5 : 1 }}>
-                  <RefreshCw size={10} strokeWidth={2} className={refreshing ? 'animate-spin' : ''} />
-                  {refreshing ? 'Syncing…' : 'Sync'}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 relative">
-        {error && (
-          <div className="mb-4 max-w-xl mx-auto bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 flex items-start justify-between gap-3 relative z-50">
-            <span className="break-all">{error}</span>
-            <button onClick={() => setError('')} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {notice && (
-          <div className="mb-4 max-w-xl mx-auto bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-start justify-between gap-3 relative z-50">
-            <span>{notice}</span>
-            <button onClick={() => setNotice('')} className="shrink-0 text-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Section heading — solo H2 above the grid */}
-        {revealed && (
-          <div style={{ marginBottom: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 }}>
-              <span aria-hidden="true" style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 34, height: 34, background: 'var(--shu)', color: 'var(--paper)',
-                borderRadius: 0, fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
-                fontSize: 18, letterSpacing: '-0.02em', flexShrink: 0,
-              }}>T</span>
-              <h1 className="tm-mincho" style={{ margin: 0, fontSize: 30, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
-                Today's hunting ground
-              </h1>
-            </div>
-            <p className="tm-mono" style={{ margin: '6px 0 0 48px', fontSize: 10, letterSpacing: '0.2em', color: 'var(--sumi-mute)', textTransform: 'uppercase' }}>
-              {(() => {
-                const ready    = filteredJobs.filter(j => tailoredJobIds.has(j.url ?? '')).length;
-                const inPrep   = filteredJobs.filter(j => !tailoredJobIds.has(j.url ?? '') && j.match_score >= 60).length;
-                const scouting = filteredJobs.filter(j => !tailoredJobIds.has(j.url ?? '') && j.match_score < 60).length;
-                return `${ready} Strike Ready  ·  ${inPrep} In Prep  ·  ${scouting} Scouting`;
-              })()}
-            </p>
-          </div>
-        )}
-
-        {/* Design DNA — shown once style_config is available */}
-        {revealed && parsedResume.style_config && (
-          <DesignDNAPanel
-            config={parsedResume.style_config}
-            candidateName={parsedResume.full_name || undefined}
-          />
-        )}
-
-        {/* Autosend Protocol — shown once resume is loaded */}
-        {revealed && <AutosendPanel autosend={autosend} />}
-
-        {/* Feed — always in DOM, blurred+grayscale until revealed */}
-        <div
-          style={{
-            filter: revealed ? 'none' : 'blur(12px) grayscale(1)',
-            opacity: revealed ? 1 : 0.55,
-            pointerEvents: revealed ? 'auto' : 'none',
-            userSelect: revealed ? 'auto' : 'none',
-            transition: 'filter 1s ease-out, opacity 0.8s ease-out',
-          }}
-        >
-          {displayJobs.length > 0 ? (
-            <JobFeed
-              jobs={filteredJobs}
-              totalJobs={displayJobs.length}
-              parsedResume={parsedResume}
-              resumeLoading={resumeLoading}
-              resumeFetched={resumeFetched}
-              isLoggedIn={!!user}
-              onLogin={handleLogin}
-              onSaveBeforeRedirect={handleSaveBeforeRedirect}
-              pendingTailorJobUrl={pendingTailorJobUrl}
-              onPendingTailorHandled={() => setPendingTailorJobUrl(null)}
-              tailoredJobIds={tailoredJobIds}
-              onCommitTailoring={handleCommitTailoring}
-              />
-          ) : (
-            /* Shimmer skeleton while background jobs load */
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="p-5 h-52 animate-pulse" style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}>
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-10 h-10 bg-gray-200 shrink-0" />
-                    <div className="flex-1 pt-1">
-                      <div className="h-3.5 bg-gray-200 w-3/4 mb-2" />
-                      <div className="h-3 bg-gray-100 w-1/2" />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="h-3 bg-gray-100 w-full" />
-                    <div className="h-3 bg-gray-100 w-4/5" />
-                    <div className="h-3 bg-gray-100 w-2/3" />
-                  </div>
+      
+                {/* Right: controls (always visible) */}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+      
+                  {/* Avatar */}
+                  <UserMenu
+                    user={user}
+                    parsedResume={parsedResume}
+                    onLogin={handleLogin}
+                    onNewResume={handleReset}
+                    onSignOut={() => { setUser(null); setRevealed(false); setResults(null); setExpiredUrls(new Set()); }}
+                  />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer ornament — END OF HUNT */}
-        {revealed && filteredJobs.length > 0 && (
-          <div style={{ marginTop: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--sumi-mute)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
-              <TalonMark size={20} />
-              <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
-            </div>
-            <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase' }}>
-              End of hunt · {filteredJobs.length} of {displayJobs.length}
-            </div>
-          </div>
-        )}
-
-        {/* Upload overlay — covers feed until resume is submitted */}
-        {!revealed && (
-          <div
-            className="fixed inset-0 z-40 flex items-center justify-center px-4"
-            onClick={handleOverlayClose}
-          >
-            <div className="absolute inset-0 bg-white/30" style={{ backdropFilter: 'blur(3px)' }} />
-
-            <div
-              className="relative p-8 w-full max-w-md"
-              style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close button */}
-              <button
-                onClick={handleOverlayClose}
-                className="absolute top-4 right-4 text-gray-300 hover:text-gray-500 transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <div style={{ textAlign: 'center', marginBottom: user ? 32 : 28 }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                  <TalonMatchLogo size="lg" />
-                </div>
-                <h2 className="tm-mincho" style={{ fontSize: 22, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.01em', lineHeight: 1.25, margin: 0 }}>
-                  {user ? (
-                    <>
-                      Upload a new resume
-                      {geoCity && <>, <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
-                    </>
-                  ) : (
-                    <>
-                      Unlock your career matches
-                      {geoCity && <> in <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
-                    </>
-                  )}
-                </h2>
-                <p className="tm-mono" style={{ color: 'var(--sumi-faint)', marginTop: 10, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1.6 }}>
-                  {user ? (
-                    'Results saved to your account'
-                  ) : (
-                    <>
-                      Upload resume · reveal{' '}
-                      {backgroundJobs.length > 0 ? `${backgroundJobs.length} roles` : 'roles'}
-                    </>
-                  )}
-                </p>
               </div>
+      
+              {/* Filter + sort sub-bar — shown when jobs are revealed */}
+            </header>
+      )}
+      <Routes>
+        <Route path="/tailor/:jobId" element={
+          <TailorPage parsedResume={parsedResume} user={user} onCommitTailoring={handleCommitTailoring} />
+        } />
+        <Route path="/settings" element={
+          <SettingsPage parsedResume={parsedResume} autosend={autosend} user={user} />
+        } />
+        <Route path="/kanban" element={
+          <KanbanPage
+            displayJobs={displayJobs}
+            tailoredJobIds={tailoredJobIds}
+            interviewingJobUrls={interviewingJobUrls}
+            onMoveToInterviewing={(url) => setInterviewingJobUrls(prev => new Set([...prev, url]))}
+            onMoveToApplied={(url) => setInterviewingJobUrls(prev => { const n = new Set(prev); n.delete(url); return n; })}
+          />
+        } />
+        <Route path="/strikes" element={<StrikesPage />} />
+        <Route path="/history" element={<HistoryPage displayJobs={displayJobs} />} />
+        <Route path="/" element={
+          <>
+            <SideOrnament side="left" />
+            <SideOrnament side="right" />
+                  <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 relative">
+                    {error && (
+                      <div className="mb-4 max-w-xl mx-auto bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600 flex items-start justify-between gap-3 relative z-50">
+                        <span className="break-all">{error}</span>
+                        <button onClick={() => setError('')} className="shrink-0 text-red-400 hover:text-red-600 cursor-pointer transition-colors">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+            
+                    {notice && (
+                      <div className="mb-4 max-w-xl mx-auto bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-start justify-between gap-3 relative z-50">
+                        <span>{notice}</span>
+                        <button onClick={() => setNotice('')} className="shrink-0 text-amber-400 hover:text-amber-600 cursor-pointer transition-colors">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+            
+                    {/* Section heading */}
+                    {revealed && (
+                      <div style={{ marginBottom: 24 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 6 }}>
+                          <span aria-hidden="true" style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 34, height: 34, background: 'var(--shu)', color: 'var(--paper)',
+                            fontFamily: '"Shippori Mincho", serif', fontWeight: 700,
+                            fontSize: 18, letterSpacing: '-0.02em', flexShrink: 0,
+                          }}>T</span>
+                          <h1 className="tm-mincho" style={{ margin: 0, fontSize: 30, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.015em' }}>
+                            Today's hunting ground
+                          </h1>
 
-              <ResumeUpload onSubmit={handleSubmit} loading={loading} />
+                          {/* Filters — right-aligned */}
+                          {displayJobs.length > 0 && (
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ display: 'flex', border: '1px solid var(--rule)' }}>
+                                {[{ v: 'any', l: 'Any' }, { v: '24h', l: '24h' }, { v: '7d', l: 'Wk' }, { v: '30d', l: 'Mo' }].map(({ v, l }, i, arr) => (
+                                  <button key={v} onClick={() => setDateFilter(v)} style={{
+                                    padding: '4px 10px', border: 'none', cursor: 'pointer',
+                                    borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none',
+                                    background: dateFilter === v ? 'var(--sumi)' : 'transparent',
+                                    color: dateFilter === v ? 'var(--paper)' : 'var(--sumi)',
+                                    fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+                                  }}>{l}</button>
+                                ))}
+                              </div>
+                              <div style={{ width: 1, height: 14, background: 'var(--rule)' }} />
+                              <div style={{ display: 'flex', border: '1px solid var(--rule)' }}>
+                                {[{ v: 0, l: 'All' }, { v: 60, l: '60%+' }, { v: 80, l: '80%+' }].map(({ v, l }, i, arr) => (
+                                  <button key={v} onClick={() => setMinScore(v)} style={{
+                                    padding: '4px 10px', border: 'none', cursor: 'pointer',
+                                    borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none',
+                                    background: minScore === v ? 'var(--sumi)' : 'transparent',
+                                    color: minScore === v ? 'var(--paper)' : 'var(--sumi)',
+                                    fontFamily: '"JetBrains Mono", monospace', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+                                  }}>{l}</button>
+                                ))}
+                              </div>
+                              {results && (
+                                <button onClick={handleRefreshJobs} disabled={refreshing}
+                                  title="Sync fresh results"
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 28, height: 28, border: '1px solid var(--rule)', background: 'transparent',
+                                    cursor: 'pointer', color: 'var(--sumi-mute)', opacity: refreshing ? 0.5 : 1 }}>
+                                  <RefreshCw size={11} strokeWidth={2} className={refreshing ? 'animate-spin' : ''} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <p className="tm-mono" style={{ margin: '0 0 0 48px', fontSize: 10, letterSpacing: '0.2em', color: 'var(--sumi-mute)', textTransform: 'uppercase' }}>
+                          {(() => {
+                            const ready    = filteredJobs.filter(j => tailoredJobIds.has(j.url ?? '')).length;
+                            const inPrep   = filteredJobs.filter(j => !tailoredJobIds.has(j.url ?? '') && j.match_score >= 60).length;
+                            const scouting = filteredJobs.filter(j => !tailoredJobIds.has(j.url ?? '') && j.match_score < 60).length;
+                            return `${ready} Strike Ready · ${inPrep} In Prep · ${scouting} Scouting`;
+                          })()}
+                        </p>
+                      </div>
+                    )}
 
-              {!user && (
-                <>
-                  <div className="mt-4 flex items-center gap-3">
-                    <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
-                    <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--sumi-faint)', flexShrink: 0, textTransform: 'uppercase' }}>or</span>
-                    <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
-                  </div>
-                  <div className="mt-4">
-                    <GoogleSignIn parsedResume={parsedResume} onLogin={handleLogin} />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
+                    {/* Feed */}
+                    <div
+                      style={{
+                        filter: revealed ? 'none' : 'blur(12px) grayscale(1)',
+                        opacity: revealed ? 1 : 0.55,
+                        pointerEvents: revealed ? 'auto' : 'none',
+                        userSelect: revealed ? 'auto' : 'none',
+                        transition: 'filter 1s ease-out, opacity 0.8s ease-out',
+                      }}
+                    >
+                      {displayJobs.length > 0 ? (
+                        <JobFeed
+                          jobs={filteredJobs}
+                          totalJobs={displayJobs.length}
+                          parsedResume={parsedResume}
+                          resumeLoading={resumeLoading}
+                          resumeFetched={resumeFetched}
+                          isLoggedIn={!!user}
+                          onLogin={handleLogin}
+                          onSaveBeforeRedirect={handleSaveBeforeRedirect}
+                          pendingTailorJobUrl={pendingTailorJobUrl}
+                          onPendingTailorHandled={() => setPendingTailorJobUrl(null)}
+                          tailoredJobIds={tailoredJobIds}
+                          onCommitTailoring={handleCommitTailoring}
+                        />
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {Array.from({ length: 9 }).map((_, i) => (
+                            <div key={i} className="p-5 h-52 animate-pulse" style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}>
+                              <div className="flex items-start gap-3 mb-4">
+                                <div className="w-10 h-10 bg-gray-200 shrink-0" />
+                                <div className="flex-1 pt-1">
+                                  <div className="h-3.5 bg-gray-200 w-3/4 mb-2" />
+                                  <div className="h-3 bg-gray-100 w-1/2" />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="h-3 bg-gray-100 w-full" />
+                                <div className="h-3 bg-gray-100 w-4/5" />
+                                <div className="h-3 bg-gray-100 w-2/3" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-      {syncToast && (
+                    {/* Footer ornament — END OF HUNT */}
+                    {revealed && filteredJobs.length > 0 && (
+                      <div style={{ marginTop: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--sumi-mute)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
+                          <TalonMark size={20} />
+                          <span style={{ width: 60, height: 1, background: 'var(--rule)' }} />
+                        </div>
+                        <div className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.32em', textTransform: 'uppercase' }}>
+                          End of hunt · {filteredJobs.length} of {displayJobs.length}
+                        </div>
+                      </div>
+                    )}
+            
+                    {/* Upload overlay — covers feed until resume is submitted */}
+                    {!revealed && (
+                      <div
+                        className="fixed inset-0 z-40 flex items-center justify-center px-4"
+                        onClick={handleOverlayClose}
+                      >
+                        <div className="absolute inset-0 bg-white/30" style={{ backdropFilter: 'blur(3px)' }} />
+            
+                        <div
+                          className="relative p-8 w-full max-w-md"
+                          style={{ background: 'var(--paper)', border: '1px solid var(--rule)' }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Close button */}
+                          <button
+                            onClick={handleOverlayClose}
+                            className="absolute top-4 right-4 text-gray-300 hover:text-gray-500 transition-colors cursor-pointer"
+                            aria-label="Close"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                          <div style={{ textAlign: 'center', marginBottom: user ? 32 : 28 }}>
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                              <TalonMatchLogo size="lg" />
+                            </div>
+                            <h2 className="tm-mincho" style={{ fontSize: 22, fontWeight: 600, color: 'var(--sumi)', letterSpacing: '-0.01em', lineHeight: 1.25, margin: 0 }}>
+                              {user ? (
+                                <>
+                                  Upload a new resume
+                                  {geoCity && <>, <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
+                                </>
+                              ) : (
+                                <>
+                                  Unlock your career matches
+                                  {geoCity && <> in <span style={{ color: 'var(--shu)' }}>{geoCity}</span></>}
+                                </>
+                              )}
+                            </h2>
+                            <p className="tm-mono" style={{ color: 'var(--sumi-faint)', marginTop: 10, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1.6 }}>
+                              {user ? (
+                                'Results saved to your account'
+                              ) : (
+                                <>
+                                  Upload resume · reveal{' '}
+                                  {backgroundJobs.length > 0 ? `${backgroundJobs.length} roles` : 'roles'}
+                                </>
+                              )}
+                            </p>
+                          </div>
+            
+                          <ResumeUpload onSubmit={handleSubmit} loading={loading} />
+            
+                          {!user && (
+                            <>
+                              <div className="mt-4 flex items-center gap-3">
+                                <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
+                                <span className="tm-mono" style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--sumi-faint)', flexShrink: 0, textTransform: 'uppercase' }}>or</span>
+                                <div style={{ flex: 1, height: 1, background: 'var(--rule)' }} />
+                              </div>
+                              <div className="mt-4">
+                                <GoogleSignIn parsedResume={parsedResume} onLogin={handleLogin} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </main>
+                  {syncToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 border border-green-200 bg-green-50 text-green-700 text-xs font-medium pointer-events-none">
           <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -870,8 +799,9 @@ export default function App() {
           Job data synchronized.
         </div>
       )}
+          </>
+        } />
+      </Routes>
     </div>
-      } />
-    </Routes>
   );
 }
