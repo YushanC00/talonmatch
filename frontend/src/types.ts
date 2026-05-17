@@ -122,7 +122,7 @@ export interface ApplicationRecord {
   company: string
   tailored_json: TailoredResume
   match_score: number
-  status: 'tailored'
+  status: 'tailored' | 'auto_queued' | 'auto_applied'
   created_at?: string
   updated_at?: string
 }

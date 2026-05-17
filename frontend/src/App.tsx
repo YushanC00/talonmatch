@@ -12,7 +12,9 @@ import { resolveCity } from './utils/geolocation';
 import { makeFreshnessComparator, filterExpired } from './utils/jobSort';
 import type { Job, ParsedResume, MatchApiResponse } from './types';
 import DesignDNAPanel from './components/DesignDNAPanel';
+import AutosendPanel from './components/AutosendPanel';
 import TailorPage from './pages/TailorPage';
+import { useAutosend } from './hooks/useAutosend';
 import './index.css';
 
 function TalonMark({ size = 36 }) {
@@ -500,6 +502,14 @@ export default function App() {
   const displayJobs  = results ? results.jobs : backgroundJobs;
   const filtersActive  = minScore !== 0;
 
+  const autosend = useAutosend(
+    displayJobs,
+    tailoredJobIds,
+    revealed ? parsedResume : null,
+    (job) => handleCommitTailoring(job.url ?? ''),
+    user?.email ?? undefined,
+  );
+
   const now = Date.now();
   const filteredJobs = displayJobs
     .filter((j: Job) => j.match_score >= minScore)
@@ -715,6 +725,9 @@ export default function App() {
             candidateName={parsedResume.full_name || undefined}
           />
         )}
+
+        {/* Autosend Protocol — shown once resume is loaded */}
+        {revealed && <AutosendPanel autosend={autosend} />}
 
         {/* Feed — always in DOM, blurred+grayscale until revealed */}
         <div

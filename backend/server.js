@@ -8,6 +8,7 @@ const { parseResumeAI, tokenStats } = require('./resumeParserAI');
 const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { streamTailorResume } = require('./tailorResume');
+const { sendNotification } = require('./emailService');
 const { evaluateNarrative } = require('./src/services/narrativeAuditor');
 const { clearCache } = require('./jobFetcher');
 const { extractDesignDNA } = require('./designDNA');
@@ -58,6 +59,7 @@ const groqState = { status: 'unknown', detail: null, lastOk: null, lastError: nu
 app.get('/api/health', (req, res) => {
   const groqStatus = groqState.status;
   const groqDetail = groqState.detail;
+  const resendStatus = process.env.RESEND_API_KEY ? 'ok' : 'not_configured';
 
   if (req.accepts('html')) {
     const uptime = Math.floor(process.uptime());
@@ -125,6 +127,14 @@ app.get('/api/health', (req, res) => {
     </div>
   </div>
 
+  <div class="row">
+    <div><div class="service">Email / Resend</div></div>
+    <div class="badge">
+      <div class="dot" style="background:${resendStatus === 'ok' ? '#4ade80' : '#f87171'}"></div>
+      ${resendStatus === 'ok' ? 'Configured' : 'Not configured'}
+    </div>
+  </div>
+
   <div class="bar-wrap">
     <div class="bar-header">
       <span class="service">Groq tokens (session)</span>
@@ -162,7 +172,7 @@ app.get('/api/health', (req, res) => {
 </html>`);
   }
 
-  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), groq: groqStatus, groqDetail });
+  res.json({ status: 'ok', uptime: Math.floor(process.uptime()), groq: groqStatus, groqDetail, resend: resendStatus });
 });
 
 app.post('/api/resume/parse', upload.single('resume'), async (req, res) => {
@@ -454,6 +464,23 @@ app.delete('/api/cache/clear', (req, res) => {
     res.json({ cleared });
   } catch (err) {
     res.status(500).json({ error: 'Cache clear failed', details: err.message });
+  }
+});
+
+app.post('/api/notify', async (req, res) => {
+  const { to, applications } = req.body;
+  if (!to || !Array.isArray(applications) || applications.length === 0) {
+    return res.status(400).json({ error: 'to and non-empty applications array required' });
+  }
+  if (!process.env.RESEND_API_KEY) {
+    return res.status(503).json({ error: 'Email not configured — set RESEND_API_KEY in .env' });
+  }
+  try {
+    await sendNotification({ to, applications });
+    res.json({ sent: applications.length });
+  } catch (err) {
+    console.error('[notify]', err.message);
+    res.status(500).json({ error: 'Failed to send notification', details: err.message });
   }
 });
 

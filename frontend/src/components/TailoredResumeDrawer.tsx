@@ -5,6 +5,7 @@ import { Pencil, Check } from 'lucide-react';
 import { skillMatches } from '../utils/tokenMatcher';
 import { logDecision } from '../utils/telemetry';
 import { saveApplication } from '../lib/saveApplication';
+import { buildPdfBlob as buildPdfBlobShared } from '../lib/pdfBuilder';
 import type { Job, TailoredSection, ParsedResume, NarrativeInsight } from '../types';
 
 interface DrawerInnerProps {
@@ -427,20 +428,7 @@ function TailoredResumeDrawerInner({
   const reviewedCount = Object.keys(reviews).length + Object.keys(editValues).length;
   const progressPct   = totalItems > 0 ? Math.min(100, Math.round((reviewedCount / totalItems) * 100)) : 0;
 
-  const buildPdfBlob = async () => {
-    const [{ pdf }, { default: ResumePDF }] = await Promise.all([
-      import('@react-pdf/renderer'),
-      import('./ResumePDF'),
-    ]);
-    return pdf(
-      <ResumePDF
-        sections={v4Sections}
-        parsedResume={parsedResume}
-        reviews={reviews}
-        editValues={editValues}
-      />
-    ).toBlob();
-  };
+  const buildPdfBlob = () => buildPdfBlobShared(v4Sections, parsedResume, reviews, editValues);
 
   const handleDownload = async () => {
     const blob = await buildPdfBlob();
