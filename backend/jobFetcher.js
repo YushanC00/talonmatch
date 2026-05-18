@@ -267,6 +267,68 @@ function sanitizeTitle(t) {
     .trim();
 }
 
+// ─── Career ladder expansion ──────────────────────────────────────────────────
+
+const CAREER_PROGRESSIONS = [
+  // Engineering: Lead / Tech Lead → management or principal track
+  {
+    match: /\b(tech|technical)\s+lead\b/i,
+    next:  ['Engineering Manager', 'Principal Engineer'],
+  },
+  // Lead or Staff Engineer → principal / management
+  {
+    match: /\b(lead|staff)\s+(software|frontend|front-end|backend|back-end|full.?stack|mobile|platform)?\s*(engineer|developer)\b/i,
+    next:  ['Engineering Manager', 'Principal Engineer'],
+  },
+  // Principal → Director / Distinguished
+  {
+    match: /\bprincipal\s+(software|frontend|backend|full.?stack)?\s*(engineer|developer)\b/i,
+    next:  ['Distinguished Engineer', 'Director of Engineering'],
+  },
+  // Senior → Staff
+  {
+    match: /\bsenior\s+(software|frontend|front-end|backend|back-end|full.?stack|mobile|platform|web)?\s*(engineer|developer)\b/i,
+    next:  ['Staff Engineer', 'Lead Engineer'],
+  },
+  // Mid-level engineer → Senior
+  {
+    match: /^(?!.*(senior|lead|staff|principal|junior|jr|associate|intern))(software|frontend|front-end|backend|back-end|full.?stack|mobile|web)?\s*(engineer|developer)\b/i,
+    next:  ['Senior Software Engineer', 'Senior Developer'],
+  },
+  // Design: Lead/Senior designer → management
+  {
+    match: /\b(lead|senior|principal)\s+(ux|ui|product|visual|experience|interaction)?\s*(designer|design)\b/i,
+    next:  ['Design Manager', 'Head of Design', 'Principal Designer'],
+  },
+  // Mid-level designer → Senior
+  {
+    match: /^(?!.*(senior|lead|principal|junior))(ux|ui|product|visual|experience|interaction)\s+designer\b/i,
+    next:  ['Senior UX Designer', 'Senior Product Designer'],
+  },
+  // Product management
+  {
+    match: /\bsenior\s+product\s+manager\b/i,
+    next:  ['Group Product Manager', 'Director of Product'],
+  },
+  {
+    match: /^(?!.*senior)\bproduct\s+manager\b/i,
+    next:  ['Senior Product Manager'],
+  },
+];
+
+function expandCareerTitles(title) {
+  const clean = title.trim();
+  if (!clean) return [];
+  const results = [clean];
+  for (const { match, next } of CAREER_PROGRESSIONS) {
+    if (match.test(clean)) {
+      results.push(...next);
+      break;
+    }
+  }
+  return [...new Set(results)];
+}
+
 // Tokens that indicate an education/teaching role — not searchable for job board queries
 const TEACHER_RE = /\b(teach|teacher|teaching|instructor|classroom|curriculum|school|student|pupil|grade|lesson|tutor)\b/i;
 
@@ -403,8 +465,13 @@ async function fetchFromJSearch({
     throw new Error("Set OPENWEBNINJA_KEY or RAPIDAPI_KEY env var");
 
   const topTitles = [
-    ...new Set(titles.map(sanitizeTitle).filter(t => t && isSearchableTitle(t))),
-  ].slice(0, 3);
+    ...new Set(
+      titles
+        .map(sanitizeTitle)
+        .filter(t => t && isSearchableTitle(t))
+        .flatMap(expandCareerTitles)
+    ),
+  ].slice(0, 5);
 
   if (process.env.DRY_RUN === "true") {
     topTitles.forEach((t) =>
@@ -648,7 +715,7 @@ module.exports = {
   transformJSearchJob, transformRemotiveJob, transformAdzunaJob,
   getMockData,
   cacheGet, cacheSet,
-  isSearchableTitle,
+  isSearchableTitle, expandCareerTitles,
   _setCacheDirForTesting: (dir) => { CACHE_DIR = dir; },
   _setHttpGetForTesting:  (fn)  => { _httpGetImpl = fn; },
 };

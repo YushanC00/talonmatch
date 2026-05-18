@@ -12,7 +12,7 @@ const {
   getMockData, fetchFromJSearch, fetchFromAdzuna,
   cacheGet, cacheSet, clearCache,
   _setCacheDirForTesting, _setHttpGetForTesting,
-  isSearchableTitle,
+  isSearchableTitle, expandCareerTitles,
 } = require('../jobFetcher');
 
 const TEST_CACHE_DIR = path.join(os.tmpdir(), `jf-test-${process.pid}`);
@@ -82,6 +82,86 @@ describe('sanitizeTitle', () => {
 
   it('returns normal title unchanged', () => {
     expect(sanitizeTitle('Software Engineer')).toBe('Software Engineer');
+  });
+});
+
+// ── expandCareerTitles ─────────────────────────────────────────────────────────
+
+describe('expandCareerTitles', () => {
+  it('always includes the original title', () => {
+    expect(expandCareerTitles('Tech Lead')).toContain('Tech Lead');
+    expect(expandCareerTitles('Junior Developer')).toContain('Junior Developer');
+  });
+
+  it('returns original title only for unknown titles', () => {
+    expect(expandCareerTitles('Wizard of Code')).toEqual(['Wizard of Code']);
+  });
+
+  // Engineering ladder
+  it('Tech Lead → Engineering Manager', () => {
+    expect(expandCareerTitles('Tech Lead')).toContain('Engineering Manager');
+  });
+
+  it('Technical Lead → Engineering Manager', () => {
+    expect(expandCareerTitles('Technical Lead')).toContain('Engineering Manager');
+  });
+
+  it('Lead Engineer → Engineering Manager + Principal Engineer', () => {
+    const r = expandCareerTitles('Lead Engineer');
+    expect(r).toContain('Engineering Manager');
+    expect(r).toContain('Principal Engineer');
+  });
+
+  it('Staff Engineer → Principal Engineer', () => {
+    expect(expandCareerTitles('Staff Engineer')).toContain('Principal Engineer');
+  });
+
+  it('Senior Frontend Engineer → Staff Engineer', () => {
+    expect(expandCareerTitles('Senior Frontend Engineer')).toContain('Staff Engineer');
+  });
+
+  it('Senior Software Engineer → Staff Engineer', () => {
+    expect(expandCareerTitles('Senior Software Engineer')).toContain('Staff Engineer');
+  });
+
+  it('Senior Backend Developer → Staff Engineer', () => {
+    expect(expandCareerTitles('Senior Backend Developer')).toContain('Staff Engineer');
+  });
+
+  it('Software Engineer (mid) → Senior Engineer', () => {
+    const r = expandCareerTitles('Software Engineer');
+    expect(r).toContain('Senior Software Engineer');
+  });
+
+  // Design ladder
+  it('Senior UX Designer → Design Manager', () => {
+    expect(expandCareerTitles('Senior UX Designer')).toContain('Design Manager');
+  });
+
+  it('Lead Product Designer → Head of Design', () => {
+    expect(expandCareerTitles('Lead Product Designer')).toContain('Head of Design');
+  });
+
+  it('UX Designer (mid) → Senior UX Designer', () => {
+    expect(expandCareerTitles('UX Designer')).toContain('Senior UX Designer');
+  });
+
+  it('Product Designer → Senior Product Designer', () => {
+    expect(expandCareerTitles('Product Designer')).toContain('Senior Product Designer');
+  });
+
+  // Product ladder
+  it('Senior Product Manager → Group Product Manager', () => {
+    expect(expandCareerTitles('Senior Product Manager')).toContain('Group Product Manager');
+  });
+
+  it('Product Manager → Senior Product Manager', () => {
+    expect(expandCareerTitles('Product Manager')).toContain('Senior Product Manager');
+  });
+
+  it('no duplicates in result', () => {
+    const r = expandCareerTitles('Tech Lead');
+    expect(r.length).toBe(new Set(r).size);
   });
 });
 
@@ -538,6 +618,12 @@ describe('fetchFromJSearch — Concentric Search Fallback', () => {
   beforeEach(() => {
     clearCache();
     process.env.OPENWEBNINJA_KEY = 'test-key';
+    // 'Engineer' expands via career progression to 'Senior Software Engineer' + 'Senior Developer'.
+    // Seed all phases for those expanded titles so no real HTTP calls are attempted.
+    for (const loc of ['Toronto', 'Ontario', 'Remote, CA', 'Canada']) {
+      cacheSet(`Senior Software Engineer ${loc}`, []);
+      cacheSet(`Senior Developer ${loc}`, []);
+    }
   });
 
   afterEach(() => {
