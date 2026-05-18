@@ -9,6 +9,8 @@ const { fetchJobs } = require('./jobFetcher');
 const { scoreAndRank } = require('./matchScorer');
 const { streamTailorResume } = require('./tailorResume');
 const { sendNotification } = require('./emailService');
+const fs = require('fs');
+const crypto = require('crypto');
 const { evaluateNarrative } = require('./src/services/narrativeAuditor');
 const { clearCache } = require('./jobFetcher');
 const { extractDesignDNA } = require('./designDNA');
@@ -467,6 +469,22 @@ app.delete('/api/cache/clear', (req, res) => {
   }
 });
 
+const NOTIFY_CACHE_DIR  = require('path').join(__dirname, 'cache');
+const NOTIFIED_CACHE    = require('path').join(NOTIFY_CACHE_DIR, 'notified.json');
+
+function loadNotifiedCache() {
+  try {
+    return JSON.parse(fs.readFileSync(NOTIFIED_CACHE, 'utf8'));
+  } catch { return {}; }
+}
+
+function saveNotifiedCache(data) {
+  try {
+    if (!fs.existsSync(NOTIFY_CACHE_DIR)) fs.mkdirSync(NOTIFY_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(NOTIFIED_CACHE, JSON.stringify(data));
+  } catch { /* disk full / permissions */ }
+}
+
 app.post('/api/notify', async (req, res) => {
   const { to, applications } = req.body;
   if (!to || !Array.isArray(applications) || applications.length === 0) {
@@ -475,9 +493,24 @@ app.post('/api/notify', async (req, res) => {
   if (!process.env.RESEND_API_KEY) {
     return res.status(503).json({ error: 'Email not configured — set RESEND_API_KEY in .env' });
   }
+
+  // Dedup: filter applications already sent to this address
+  const key = crypto.createHash('sha256').update(to.toLowerCase()).digest('hex');
+  const cache = loadNotifiedCache();
+  const alreadySent = new Set(cache[key] || []);
+  const fresh = applications.filter(a => a.applyUrl && !alreadySent.has(a.applyUrl));
+
+  if (fresh.length === 0) {
+    return res.json({ sent: 0, skipped: applications.length });
+  }
+
   try {
-    await sendNotification({ to, applications });
-    res.json({ sent: applications.length });
+    await sendNotification({ to, applications: fresh });
+    // Persist newly notified URLs
+    fresh.forEach(a => alreadySent.add(a.applyUrl));
+    cache[key] = [...alreadySent];
+    saveNotifiedCache(cache);
+    res.json({ sent: fresh.length, skipped: applications.length - fresh.length });
   } catch (err) {
     console.error('[notify]', err.message);
     res.status(500).json({ error: 'Failed to send notification', details: err.message });

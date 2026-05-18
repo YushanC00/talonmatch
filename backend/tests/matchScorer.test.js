@@ -201,15 +201,26 @@ describe('scoreAndRank — match_reason', () => {
 
 // ── Uncovered branches ────────────────────────────────────────────────────────
 
-describe('scoreAndRank — experience description token matching (line 36)', () => {
-  it('matches requirement token from experience description field', () => {
+describe('scoreAndRank — experience title token matching', () => {
+  it('matches requirement token from experience title field', () => {
+    const resume = makeResume({
+      skills: [],
+      experience: [{ title: 'Kubernetes Engineer', company: 'X', description: '' }],
+    });
+    const job = makeJob({ requirements_array: ['Kubernetes'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeGreaterThan(0);
+  });
+
+  it('experience description tokens do NOT contribute to skill matching', () => {
     const resume = makeResume({
       skills: [],
       experience: [{ title: 'Engineer', company: 'X', description: 'Worked with Kubernetes daily.' }],
     });
     const job = makeJob({ requirements_array: ['Kubernetes'] });
     const [scored] = scoreAndRank(resume, [job]);
-    expect(scored.match_score).toBeGreaterThan(0);
+    // Kubernetes in description does not match; score comes only from seniority/proximity
+    expect(scored.match_score).toBeLessThan(50);
   });
 });
 
@@ -221,5 +232,89 @@ describe('scoreAndRank — proximity score 0.0 (line 93)', () => {
     const [hi, lo] = scoreAndRank(resume, [farJob, nearJob]);
     // nearJob (proximity 1.0) must beat farJob (proximity 0.0)
     expect(hi.match_score).toBeGreaterThan(lo.match_score);
+  });
+});
+
+// ── is_remote normalization ────────────────────────────────────────────────────
+
+describe('scoreAndRank — is_remote normalization', () => {
+  it('sets is_remote true when job_title contains "remote"', () => {
+    const resume = makeResume({ city: 'Vancouver', province: 'BC' });
+    const job = makeJob({ is_remote: false, job_title: 'Remote Rails Engineer', location: 'Canada', requirements_array: [] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.is_remote).toBe(true);
+  });
+
+  it('sets is_remote true when location contains "remote"', () => {
+    const resume = makeResume({ city: 'Vancouver', province: 'BC' });
+    const job = makeJob({ is_remote: false, location: 'Remote, Canada', requirements_array: [] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.is_remote).toBe(true);
+  });
+
+  it('sets is_remote true when description contains "remote"', () => {
+    const resume = makeResume({ city: 'Vancouver', province: 'BC' });
+    const job = makeJob({ is_remote: false, location: 'Worldwide', description: 'This is a fully remote position.', requirements_array: [] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.is_remote).toBe(true);
+  });
+
+  it('preserves is_remote false when no remote signals exist', () => {
+    const resume = makeResume({ city: 'Vancouver', province: 'BC' });
+    const job = makeJob({ is_remote: false, location: 'Toronto, ON', description: 'Onsite role.', requirements_array: [] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.is_remote).toBe(false);
+  });
+});
+
+// ── Cross-domain false positive prevention ────────────────────────────────────
+
+describe('scoreAndRank — cross-domain false positives', () => {
+  it('Freelance Writer job scores low against UX designer resume (explicit reqs)', () => {
+    const resume = makeResume({
+      skills: ['Figma', 'User Research', 'Prototyping', 'Design Systems', 'UX Writing', 'Accessibility'],
+      most_recent_job_title: 'Senior UX Designer',
+    });
+    const writerJob = makeJob({
+      job_title: 'Freelance Writer',
+      requirements_array: ['Creative Writing', 'Content Creation', 'SEO', 'Copywriting', 'Editorial'],
+      is_remote: true,
+    });
+    const [scored] = scoreAndRank(resume, [writerJob]);
+    expect(scored.match_score).toBeLessThan(50);
+  });
+
+  it('description tokens do not inflate score for unrelated job', () => {
+    // Resume has rich description mentioning "creative direction" and "research"
+    const resume = {
+      skills: ['Figma', 'UX Writing'],
+      most_recent_job_title: 'UX Designer',
+      experience: [{
+        title: 'UX Designer',
+        company: 'Acme',
+        description: 'Presented creative direction to stakeholders. Conducted research and usability studies.',
+      }],
+      education: [],
+      city: 'Vancouver', province: 'BC',
+    };
+    // Writer job with single-word requirements that match description tokens
+    const writerJob = {
+      job_title: 'Freelance Writer',
+      requirements_array: ['Creative', 'Research', 'Writing', 'Journalism', 'Editing'],
+      is_remote: true,
+      location: 'Remote',
+      description: '',
+    };
+    const [scored] = scoreAndRank(resume, [writerJob]);
+    // "creative" and "research" from description should NOT cause this to score high
+    expect(scored.match_score).toBeLessThan(50);
+  });
+
+  it('"writing" token from skill does not fully match unrelated "Creative Writing" req', () => {
+    const resume = makeResume({ skills: ['UX Writing', 'Figma'], most_recent_job_title: 'UX Designer', city: 'vancouver', province: 'bc' });
+    const job = makeJob({ requirements_array: ['Creative Writing', 'Copywriting', 'SEO', 'Journalism'], is_remote: false, location: 'New York' });
+    const [scored] = scoreAndRank(resume, [job]);
+    // "writing" token from UX Writing should NOT match "Creative Writing" as fully matched
+    expect(scored.match_score).toBeLessThan(40);
   });
 });

@@ -8,6 +8,9 @@ const STOP_WORDS = new Set([
   'as','than','then','so','if','not','no','nor','yet','both','either',
   'each','any','some','such','while','during','including','across','team',
   'work','working','strong','good','great','excellent','ability','skills',
+  // common job-req qualifiers that add noise when tokenizing requirements
+  'experience','knowledge','proficiency','familiar','familiarity',
+  'preferred','required','minimum','least','proven','demonstrated',
 ]);
 
 function tokenize(text) {
@@ -25,12 +28,15 @@ function normalize(text) {
 function buildResumeTokenSet(resume) {
   const tokens = new Set();
   for (const skill of (resume.skills || [])) {
-    tokens.add(normalize(skill));
-    tokenize(skill).forEach(t => tokens.add(t));
+    const norm = normalize(skill);
+    tokens.add(norm);
+    // Only add sub-tokens for single-word skills; multi-word skills match via normalize()
+    const parts = tokenize(skill);
+    if (parts.length === 1) parts.forEach(t => tokens.add(t));
   }
   for (const exp of (resume.experience || [])) {
     tokenize(exp.title || '').forEach(t => tokens.add(t));
-    tokenize(exp.description || '').forEach(t => tokens.add(t));
+    // descriptions excluded — generic words inflate cross-domain scores
   }
   for (const edu of (resume.education || [])) {
     tokenize(edu.degree || '').forEach(t => tokens.add(t));
@@ -49,8 +55,7 @@ function scoreRequirements(resumeTokens, requirementsArray) {
     const reqTokens = tokenize(req);
     const directHit  = resumeTokens.has(reqNorm);
     const tokenHit   = reqTokens.length > 0 && reqTokens.every(t => resumeTokens.has(t));
-    const partialHit = reqTokens.some(t => resumeTokens.has(t));
-    if (directHit || tokenHit || partialHit) matched.push(req);
+    if (directHit || tokenHit) matched.push(req);
     else unmatched.push(req);
   }
   return { score: matched.length / requirementsArray.length, matched, unmatched };
@@ -119,7 +124,14 @@ function scoreJob(resume, job, resumeTokens) {
   if (reqResult.unmatched.length > 0) match_score = Math.min(match_score, 99);
 
   const match_reason = buildMatchReason(reqResult.matched, reqResult.unmatched, match_score);
-  return { ...job, match_score, match_reason, requirements_array: job.requirements_array };
+
+  // Normalize is_remote using same signals as scoreProximity so card label is always accurate
+  const is_remote = Boolean(job.is_remote)
+    || /remote/i.test(job.job_title  || '')
+    || /remote/i.test(job.location   || '')
+    || /remote/i.test(job.description || '');
+
+  return { ...job, is_remote, match_score, match_reason, requirements_array: job.requirements_array };
 }
 
 function scoreAndRank(resume, jobs) {
