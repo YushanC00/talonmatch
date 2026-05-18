@@ -102,25 +102,94 @@ function getMockData() {
   ];
 }
 
+// Section headers that signal a requirements/qualifications block
+const REQUIREMENTS_SECTION_RE = /^(requirements?|qualifications?|required qualifications?|preferred qualifications?|you have|what you('ll)? (bring|need|have)|what we('re)? looking for|must.have|nice.to.have|you will bring|your background|skills? (required|needed)|minimum qualifications?)\s*:?\s*$/i;
+
+// Expanded skill keyword regex — tech + UX/design + product + leadership
+const SKILL_KEYWORD_RE = new RegExp(
+  '\\b(' + [
+    // Engineering
+    'React','Angular','Vue','Node\\.js','Python','Java','Go','Rust','TypeScript',
+    'JavaScript','PostgreSQL','MySQL','MongoDB','Redis','Docker','Kubernetes',
+    'AWS','GCP','Azure','GraphQL','REST','Git','Linux','CI\\/CD','Agile','Scrum',
+    'CSS','HTML','Ruby','Rails','PHP','Swift','Kotlin','Flutter','Next\\.js',
+    'Tailwind','SQL','Terraform','Kafka','Spark',
+    // Design tools
+    'Figma','Sketch','Adobe XD','InVision','Miro','Zeplin','Principle',
+    'ProtoPie','Webflow','Framer','Abstract',
+    // UX/design skills
+    'User Research','Usability Testing','Wireframing','Prototyping','Design Systems',
+    'Information Architecture','Interaction Design','Visual Design','Motion Design',
+    'Design Thinking','Journey Mapping','UX Writing','A\\/B Testing','Accessibility',
+    'WCAG','Product Design','Service Design','Design Strategy','Brand Design',
+    'Typography','Content Strategy','Design Leadership',
+    // Product skills
+    'Product Management','Product Strategy','Roadmap','Product Vision',
+    'Go.to.Market','Analytics','Data Analytics','User Stories','OKR','KPI',
+    'Product Discovery','User Interviews','Competitive Analysis',
+    // Leadership/collaboration
+    'Stakeholder Management','Team Leadership','Mentoring','Coaching',
+    'Cross.functional','Executive Communication','Design Reviews',
+    // Short forms (last to avoid partial matches shadowing multi-word)
+    'UX','UI',
+  ].join('|') + ')\\b',
+  'gi',
+);
+
+function extractSectionBullets(description) {
+  const results = [];
+  const lines = description.split(/\n/);
+  let inSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (REQUIREMENTS_SECTION_RE.test(trimmed)) {
+      inSection = true;
+      continue;
+    }
+
+    // Stop section if we hit another heading-like line (all caps, or ends in colon, no bullet)
+    if (inSection && !trimmed.match(/^[-•*●▪–\d]/) && trimmed.match(/^[A-Z].*[^a-z]$/) && trimmed.length < 60) {
+      inSection = false;
+    }
+
+    if (inSection && trimmed.match(/^[-•*●▪–]\s+|^\d+\.\s+/)) {
+      const clean = trimmed.replace(/^[-•*●▪–\d.]+\s*/, '').trim();
+      if (clean.length >= 5 && clean.length < 100) results.push(clean);
+    }
+  }
+
+  return results;
+}
+
 function extractRequirements(description, highlights) {
   const found = new Set();
 
-  // JSearch provides structured qualifications — use these first
+  // 1. JSearch structured qualifications — highest priority
   if (Array.isArray(highlights?.Qualifications)) {
     for (const q of highlights.Qualifications) {
       const clean = q.replace(/^[-•]\s*/, "").trim();
       if (clean.length < 80) found.add(clean);
     }
   }
-
   if (found.size >= 6) return Array.from(found).slice(0, 10);
 
-  // Fall back to regex extraction from description
-  if (description) {
-    const techPattern =
-      /\b(React|Angular|Vue|Node\.js|Python|Java|Go|Rust|TypeScript|JavaScript|PostgreSQL|MySQL|MongoDB|Redis|Docker|Kubernetes|AWS|GCP|Azure|GraphQL|REST|Git|Linux|CI\/CD|Agile|Scrum|Figma|CSS|HTML|Ruby|Rails|PHP|Swift|Kotlin|Flutter|Next\.js|Tailwind|Sketch|Adobe XD|Framer|Design Systems|UX|UI)\b/g;
-    let m;
-    while ((m = techPattern.exec(description)) !== null) found.add(m[1]);
+  if (!description) return Array.from(found).slice(0, 10);
+
+  // 2. Bullet points from Requirements/Qualifications sections
+  for (const b of extractSectionBullets(description)) found.add(b);
+  if (found.size >= 6) return Array.from(found).slice(0, 10);
+
+  // 3. Expanded keyword regex fallback — covers UX, design, product, leadership terms
+  let m;
+  SKILL_KEYWORD_RE.lastIndex = 0;
+  while ((m = SKILL_KEYWORD_RE.exec(description)) !== null) {
+    // Normalize multi-word matches to title case
+    const matched = m[1];
+    const canonical = matched.charAt(0).toUpperCase() + matched.slice(1);
+    found.add(canonical);
   }
 
   return Array.from(found).slice(0, 10);
@@ -281,13 +350,22 @@ async function fetchOneTitle({
   return jobs;
 }
 
+function normalizeForDedup(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 50);
+}
+
 function deduplicateJobs(jobs) {
-  const seen = new Set();
+  const seenUrls = new Set();
+  const seenKeys = new Set();
   return jobs.filter((job) => {
-    // Dedupe key: url if present, otherwise title+company
-    const key = job.url || `${job.job_title}|${job.company}`.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (job.url) {
+      if (seenUrls.has(job.url)) return false;
+      seenUrls.add(job.url);
+    }
+    // Cross-source dedup: same title+company from different boards
+    const key = `${normalizeForDedup(job.job_title)}|${normalizeForDedup(job.company)}`;
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
     return true;
   });
 }
@@ -350,7 +428,16 @@ async function fetchFromJSearch({
     console.log(`[radius] wide (${province}): ${wideJobs.length} results`);
   }
 
-  // Remote injection — always merged, never filtered by location
+  // Canada-wide — always run; catches jobs outside narrow city/province
+  const canadaRaw = await Promise.all(
+    topTitles.map((t) =>
+      fetchOneTitle({ title: t, userLocation: 'Canada', resultsPerPage }),
+    ),
+  );
+  const canadaJobs = deduplicateJobs(canadaRaw.flat());
+  console.log(`[radius] canada-wide: ${canadaJobs.length} results`);
+
+  // Remote — always merged, never filtered by location
   const remoteLocation = `Remote, ${country}`;
   const remoteRaw = await Promise.all(
     topTitles.map((t) =>
@@ -364,9 +451,9 @@ async function fetchFromJSearch({
   const remoteJobs = deduplicateJobs(remoteRaw.flat());
   console.log(`[radius] remote injection: ${remoteJobs.length} results`);
 
-  const all = deduplicateJobs([...narrowJobs, ...wideJobs, ...remoteJobs]);
+  const all = deduplicateJobs([...narrowJobs, ...wideJobs, ...canadaJobs, ...remoteJobs]);
   console.log(
-    `[jobs] total ${all.length} unique (narrow=${narrowJobs.length} wide=${wideJobs.length} remote=${remoteJobs.length})`,
+    `[jobs] total ${all.length} unique (narrow=${narrowJobs.length} wide=${wideJobs.length} canada=${canadaJobs.length} remote=${remoteJobs.length})`,
   );
   return all;
 }
@@ -434,33 +521,104 @@ async function fetchFromRemotive({ title, userLocation, resultsPerPage = 40 }) {
   return results.map(({ _candidateLocation, ...job }) => job);
 }
 
+// ─── Adzuna (optional — requires ADZUNA_APP_ID + ADZUNA_APP_KEY) ─────────────
+
+function transformAdzunaJob(job) {
+  const title = job.title || '';
+  const desc  = job.description || '';
+  return {
+    job_title: title,
+    company:   job.company?.display_name || '',
+    description: desc,
+    requirements_array: extractRequirements(desc),
+    location: job.location?.display_name || 'Canada',
+    is_remote: /remote/i.test(title + ' ' + desc),
+    url: job.redirect_url || '',
+    postedAt: job.created || null,
+    pay_range: job.salary_min && job.salary_max
+      ? `CA$${Math.round(job.salary_min / 1000)}k — CA$${Math.round(job.salary_max / 1000)}k`
+      : '',
+  };
+}
+
+async function fetchFromAdzuna({ titles, resultsPerPage = 20 }) {
+  const appId  = process.env.ADZUNA_APP_ID;
+  const appKey = process.env.ADZUNA_APP_KEY;
+  if (!appId || !appKey) return [];
+
+  const topTitles = [...new Set(titles.map(sanitizeTitle).filter(Boolean))].slice(0, 3);
+  const allJobs = [];
+
+  for (const title of topTitles) {
+    const params = new URLSearchParams({
+      app_id:           appId,
+      app_key:          appKey,
+      results_per_page: resultsPerPage,
+      what:             title,
+      // /ca/ path scopes to Canada — no `where` or `content_type` needed
+    });
+    let status, body;
+    try {
+      ({ status, body } = await httpGet(`https://api.adzuna.com/v1/api/jobs/ca/search/1?${params}`));
+    } catch { continue; }
+    if (status !== 200) continue;
+    try {
+      const parsed = JSON.parse(body);
+      for (const job of parsed.results || []) allJobs.push(transformAdzunaJob(job));
+    } catch { continue; }
+  }
+
+  return deduplicateJobs(allJobs);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-async function fetchJobs({ title, titles, userLocation, country = 'CA', resultsPerPage = 10 }) {
+async function fetchJobs({ title, titles, userLocation, country = 'CA', resultsPerPage = 20 }) {
+  const allTitles = titles?.length ? titles : [title];
+
   let jobs;
   if (process.env.OPENWEBNINJA_KEY || process.env.RAPIDAPI_KEY) {
-    jobs = await fetchFromJSearch({
-      titles: titles?.length ? titles : [title],
-      userLocation,
-      country,
-      resultsPerPage,
-    });
+    // Mock mode: JSearch returns mock data internally — skip all external HTTP sources
+    if (process.env.USE_MOCK_DATA === 'true') {
+      jobs = await fetchFromJSearch({ titles: allTitles, userLocation, country, resultsPerPage });
+      return jobs.map((job) => job.postedAt ? job : { ...job, postedAt: randomPostedAt() });
+    }
+
+    // Run all sources in parallel; Remotive and Adzuna degrade gracefully
+    const [jsearchResult, remotiveResult, adzunaResult] = await Promise.allSettled([
+      fetchFromJSearch({ titles: allTitles, userLocation, country, resultsPerPage }),
+      fetchFromRemotive({ title: allTitles[0], userLocation, resultsPerPage: resultsPerPage * 2 }),
+      fetchFromAdzuna({ titles: allTitles, resultsPerPage }),
+    ]);
+
+    const jsearchJobs  = jsearchResult.status  === 'fulfilled' ? jsearchResult.value  : [];
+    const remotiveJobs = remotiveResult.status === 'fulfilled' ? remotiveResult.value : [];
+    const adzunaJobs   = adzunaResult.status   === 'fulfilled' ? adzunaResult.value   : [];
+
+    if (jsearchResult.status === 'rejected')
+      console.warn('[jobs] JSearch failed:', jsearchResult.reason?.message);
+    if (remotiveResult.status === 'rejected')
+      console.warn('[jobs] Remotive failed:', remotiveResult.reason?.message);
+
+    console.log(`[jobs] sources — jsearch=${jsearchJobs.length} remotive=${remotiveJobs.length} adzuna=${adzunaJobs.length}`);
+    jobs = deduplicateJobs([...jsearchJobs, ...remotiveJobs, ...adzunaJobs]);
   } else {
     jobs = await fetchFromRemotive({
-      title,
+      title: allTitles[0],
       userLocation,
       resultsPerPage: resultsPerPage * 2,
     });
   }
-  // Backfill postedAt for cached results that pre-date this field
-  return jobs.map((job) =>
-    job.postedAt ? job : { ...job, postedAt: randomPostedAt() },
-  );
+
+  return jobs.map((job) => job.postedAt ? job : { ...job, postedAt: randomPostedAt() });
 }
+
+const PRESERVED_CACHE_FILES = new Set(['notified.json']);
 
 function clearCache() {
   if (!fs.existsSync(CACHE_DIR)) return 0;
-  const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(CACHE_DIR)
+    .filter(f => f.endsWith('.json') && !PRESERVED_CACHE_FILES.has(f));
   files.forEach(f => {
     try { fs.unlinkSync(path.join(CACHE_DIR, f)); } catch { /* noop — file may already be gone */ }
   });
@@ -468,12 +626,12 @@ function clearCache() {
 }
 
 module.exports = {
-  fetchJobs, clearCache, fetchFromJSearch, fetchFromRemotive,
+  fetchJobs, clearCache, fetchFromJSearch, fetchFromRemotive, fetchFromAdzuna,
   // pure helpers — exported for unit testing
   slugify, sanitizeTitle, buildSingleQuery,
   deduplicateJobs, extractRequirements,
   formatPayRange, isCompatibleWithLocation,
-  transformJSearchJob, transformRemotiveJob,
+  transformJSearchJob, transformRemotiveJob, transformAdzunaJob,
   getMockData,
   cacheGet, cacheSet,
   _setCacheDirForTesting: (dir) => { CACHE_DIR = dir; },

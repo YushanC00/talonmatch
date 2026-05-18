@@ -420,3 +420,55 @@ describe('GET /api/health', () => {
     expect(res.body.groq).toBe('ok');
   });
 });
+
+describe('POST /api/notify — deduplication', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const CACHE_FILE = path.join(__dirname, '../cache/notified.json');
+
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = 'test-resend-key';
+    // Clear notified cache between tests
+    try { fs.unlinkSync(CACHE_FILE); } catch { /* ok if absent */ }
+  });
+
+  afterEach(() => {
+    delete process.env.RESEND_API_KEY;
+    try { fs.unlinkSync(CACHE_FILE); } catch { /* ok */ }
+  });
+
+  const APPS = [
+    { jobTitle: 'Engineer', company: 'Acme', matchScore: 90, applyUrl: 'https://acme.com/1' },
+    { jobTitle: 'Dev',      company: 'Beta', matchScore: 88, applyUrl: 'https://beta.com/2' },
+  ];
+
+  it('rejects missing to field', async () => {
+    const res = await request(app)
+      .post('/api/notify')
+      .send({ applications: APPS });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects empty applications array', async () => {
+    const res = await request(app)
+      .post('/api/notify')
+      .send({ to: 'user@test.com', applications: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns skipped:N when all applications already sent', async () => {
+    // Pre-populate cache as if both were already sent
+    const crypto = require('crypto');
+    const key = crypto.createHash('sha256').update('user@test.com').digest('hex');
+    const cacheDir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify({ [key]: APPS.map(a => a.applyUrl) }));
+
+    const res = await request(app)
+      .post('/api/notify')
+      .send({ to: 'user@test.com', applications: APPS });
+    expect(res.status).toBe(200);
+    expect(res.body.sent).toBe(0);
+    expect(res.body.skipped).toBe(2);
+  });
+});

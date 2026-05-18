@@ -8,8 +8,8 @@ const {
   slugify, sanitizeTitle, buildSingleQuery,
   deduplicateJobs, extractRequirements,
   formatPayRange, isCompatibleWithLocation,
-  transformJSearchJob, transformRemotiveJob,
-  getMockData, fetchFromJSearch,
+  transformJSearchJob, transformRemotiveJob, transformAdzunaJob,
+  getMockData, fetchFromJSearch, fetchFromAdzuna,
   cacheGet, cacheSet, clearCache,
   _setCacheDirForTesting,
 } = require('../jobFetcher');
@@ -127,12 +127,20 @@ describe('deduplicateJobs', () => {
     expect(deduplicateJobs(jobs)).toHaveLength(1);
   });
 
-  it('keeps jobs with distinct URLs', () => {
+  it('keeps jobs with distinct URLs and distinct companies', () => {
     const jobs = [
-      { url: 'https://example.com/1', job_title: 'Dev', company: 'A' },
-      { url: 'https://example.com/2', job_title: 'Dev', company: 'A' },
+      { url: 'https://example.com/1', job_title: 'Dev', company: 'Alpha' },
+      { url: 'https://example.com/2', job_title: 'Dev', company: 'Beta' },
     ];
     expect(deduplicateJobs(jobs)).toHaveLength(2);
+  });
+
+  it('deduplicates same title+company even with different URLs (cross-source)', () => {
+    const jobs = [
+      { url: 'https://jsearch.com/1', job_title: 'Dev', company: 'A' },
+      { url: 'https://adzuna.ca/2',   job_title: 'Dev', company: 'A' },
+    ];
+    expect(deduplicateJobs(jobs)).toHaveLength(1);
   });
 
   it('handles empty array', () => {
@@ -177,6 +185,61 @@ describe('extractRequirements', () => {
     const highlights = { Qualifications: ['React', 'TypeScript'] }; // only 2 → falls through
     const reqs = extractRequirements('Must know Python and Docker.', highlights);
     expect(reqs.some(r => ['Python', 'Docker', 'React', 'TypeScript'].includes(r))).toBe(true);
+  });
+
+  it('extracts UX/design skills from description via expanded regex', () => {
+    const desc = 'Requires experience with User Research, Figma, and Design Systems. WCAG accessibility knowledge is a plus.';
+    const reqs = extractRequirements(desc, null);
+    expect(reqs).toContain('User Research');
+    expect(reqs).toContain('Design Systems');
+    expect(reqs).toContain('WCAG');
+  });
+
+  it('extracts product management skills from description', () => {
+    const desc = 'Strong background in Stakeholder Management, Product Strategy, and defining Roadmaps.';
+    const reqs = extractRequirements(desc, null);
+    expect(reqs.some(r => /stakeholder management/i.test(r))).toBe(true);
+    expect(reqs.some(r => /product strategy/i.test(r))).toBe(true);
+  });
+
+  it('extracts bullet points from Requirements section', () => {
+    const desc = [
+      'About the role: Build great things.',
+      '',
+      'Requirements:',
+      '• 5+ years in product design',
+      '• Experience with Figma and design systems',
+      '• Strong stakeholder management skills',
+      '',
+      'Nice to have:',
+      '• Familiarity with motion design',
+    ].join('\n');
+    const reqs = extractRequirements(desc, null);
+    expect(reqs.some(r => /5\+ years/i.test(r))).toBe(true);
+    expect(reqs.some(r => /figma/i.test(r))).toBe(true);
+  });
+
+  it('extracts bullets from Qualifications section', () => {
+    const desc = [
+      'We are hiring a UX Lead.',
+      '',
+      'Qualifications',
+      '- 8+ years of UX experience',
+      '- Proven track record in design leadership',
+      '- Proficiency in Figma',
+    ].join('\n');
+    const reqs = extractRequirements(desc, null);
+    expect(reqs.some(r => /ux experience/i.test(r))).toBe(true);
+  });
+
+  it('extracts bullets from "You Have:" section', () => {
+    const desc = [
+      'You Have:',
+      '• User research and usability testing experience',
+      '• Excellent communication skills',
+    ].join('\n');
+    const reqs = extractRequirements(desc, null);
+    expect(reqs.some(r => /user research/i.test(r))).toBe(true);
   });
 });
 
@@ -418,8 +481,13 @@ describe('fetchFromJSearch — Concentric Search Fallback', () => {
   const NARROW_KEY = 'Engineer Toronto';
   const WIDE_KEY   = 'Engineer Ontario';
   const REMOTE_KEY = 'Engineer Remote, CA';
+  const CANADA_KEY = 'Engineer Canada';
 
-  const SAMPLE_JOB = { url: 'https://example.com/1', job_title: 'Engineer', company: 'X' };
+  // Each phase uses a distinct company so cross-source title+company dedup doesn't collapse them
+  const NARROW_JOB = { url: 'https://example.com/narrow', job_title: 'Engineer', company: 'NarrowCo' };
+  const WIDE_JOB   = { url: 'https://example.com/wide',   job_title: 'Engineer', company: 'WideCo'   };
+  const REMOTE_JOB = { url: 'https://example.com/remote', job_title: 'Engineer', company: 'RemoteCo' };
+  const CANADA_JOB = { url: 'https://example.com/canada', job_title: 'Engineer', company: 'CanadaCo' };
 
   beforeEach(() => {
     clearCache();
@@ -432,48 +500,162 @@ describe('fetchFromJSearch — Concentric Search Fallback', () => {
   });
 
   it('uses wide province fallback when narrow returns fewer than 5 jobs', async () => {
-    // Narrow (Toronto) → 1 job, Wide (Ontario) → 5 jobs, Remote → 0
-    cacheSet(NARROW_KEY, [SAMPLE_JOB]);
-    const wideJobs = Array.from({ length: 5 }, (_, i) => ({ ...SAMPLE_JOB, url: `https://example.com/wide-${i}` }));
+    cacheSet(NARROW_KEY, [NARROW_JOB]);
+    const wideJobs = Array.from({ length: 5 }, (_, i) => ({ ...WIDE_JOB, url: `https://example.com/wide-${i}`, company: `WideCo${i}` }));
     cacheSet(WIDE_KEY, wideJobs);
     cacheSet(REMOTE_KEY, []);
+    cacheSet(CANADA_KEY, []);
 
     const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto, Ontario' });
     const urls = result.map(j => j.url);
-    // Wide jobs should appear in result
     expect(urls.some(u => u.includes('wide'))).toBe(true);
   });
 
   it('skips wide fallback when narrow returns 5 or more jobs', async () => {
-    const narrowJobs = Array.from({ length: 5 }, (_, i) => ({ ...SAMPLE_JOB, url: `https://example.com/narrow-${i}` }));
+    const narrowJobs = Array.from({ length: 5 }, (_, i) => ({ ...NARROW_JOB, url: `https://example.com/narrow-${i}`, company: `NarrowCo${i}` }));
     cacheSet(NARROW_KEY, narrowJobs);
     cacheSet(REMOTE_KEY, []);
-    // Do NOT seed wide cache — if code tries to fetch it, it'll hit API (no key issue in test)
-    // But with DRY_RUN preventing HTTP + cache miss throwing, we pre-cache wide as empty anyway
     cacheSet(WIDE_KEY, []);
+    cacheSet(CANADA_KEY, []);
 
     const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto, Ontario' });
     const urls = result.map(j => j.url);
-    // Only narrow+remote, no wide- urls
     expect(urls.every(u => !u.includes('wide'))).toBe(true);
   });
 
   it('does not attempt wide when userLocation has no province component', async () => {
-    // userLocation = city only (no comma) → province = '' → no wide
-    cacheSet('Engineer Toronto', [SAMPLE_JOB]);
+    cacheSet('Engineer Toronto', [NARROW_JOB]);
     cacheSet('Engineer Remote, CA', []);
+    cacheSet(CANADA_KEY, []);
 
     const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto' });
     expect(Array.isArray(result)).toBe(true);
   });
 
   it('merges remote jobs into final results regardless of narrow count', async () => {
-    const narrowJobs = Array.from({ length: 5 }, (_, i) => ({ ...SAMPLE_JOB, url: `https://example.com/n-${i}` }));
-    const remoteJob  = { ...SAMPLE_JOB, url: 'https://example.com/remote-1' };
+    const narrowJobs = Array.from({ length: 5 }, (_, i) => ({ ...NARROW_JOB, url: `https://example.com/n-${i}`, company: `NarrowCo${i}` }));
     cacheSet(NARROW_KEY, narrowJobs);
-    cacheSet(REMOTE_KEY, [remoteJob]);
+    cacheSet(REMOTE_KEY, [REMOTE_JOB]);
+    cacheSet(CANADA_KEY, []);
 
     const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto, Ontario' });
-    expect(result.some(j => j.url === 'https://example.com/remote-1')).toBe(true);
+    expect(result.some(j => j.url === REMOTE_JOB.url)).toBe(true);
+  });
+
+  it('merges Canada-wide jobs into final results', async () => {
+    const narrowJobs = Array.from({ length: 5 }, (_, i) => ({ ...NARROW_JOB, url: `https://example.com/n-${i}`, company: `NarrowCo${i}` }));
+    cacheSet(NARROW_KEY, narrowJobs);
+    cacheSet(REMOTE_KEY, []);
+    cacheSet(CANADA_KEY, [CANADA_JOB]);
+
+    const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto, Ontario' });
+    expect(result.some(j => j.url === CANADA_JOB.url)).toBe(true);
+  });
+
+  it('deduplicates Canada-wide jobs already in narrow results', async () => {
+    cacheSet(NARROW_KEY, [NARROW_JOB]);
+    cacheSet(WIDE_KEY, []);
+    cacheSet(REMOTE_KEY, []);
+    // Same title+company as narrow → should be deduped even though URL differs
+    cacheSet(CANADA_KEY, [{ ...NARROW_JOB, url: 'https://example.com/canada-dupe' }]);
+
+    const result = await fetchFromJSearch({ titles: ['Engineer'], userLocation: 'Toronto, Ontario' });
+    const narrowCos = result.filter(j => j.company === 'NarrowCo');
+    expect(narrowCos).toHaveLength(1);
+  });
+});
+
+// ── transformAdzunaJob ─────────────────────────────────────────────────────────
+
+describe('transformAdzunaJob', () => {
+  const RAW = {
+    title: 'Senior Engineer',
+    company: { display_name: 'Acme Corp' },
+    description: 'Build apps with React and TypeScript.',
+    location: { display_name: 'Toronto, Ontario' },
+    redirect_url: 'https://adzuna.ca/jobs/1',
+    created: '2025-05-01T00:00:00Z',
+    salary_min: 100000,
+    salary_max: 130000,
+  };
+
+  it('maps title, company, url, location, postedAt', () => {
+    const j = transformAdzunaJob(RAW);
+    expect(j.job_title).toBe('Senior Engineer');
+    expect(j.company).toBe('Acme Corp');
+    expect(j.url).toBe('https://adzuna.ca/jobs/1');
+    expect(j.location).toBe('Toronto, Ontario');
+    expect(j.postedAt).toBe('2025-05-01T00:00:00Z');
+  });
+
+  it('formats pay_range with CA$ when both min and max present', () => {
+    expect(transformAdzunaJob(RAW).pay_range).toContain('CA$');
+  });
+
+  it('detects remote from title keyword', () => {
+    const j = transformAdzunaJob({ ...RAW, title: 'Remote Engineer' });
+    expect(j.is_remote).toBe(true);
+  });
+
+  it('detects remote from description keyword', () => {
+    const j = transformAdzunaJob({ ...RAW, description: 'This is a fully remote role.' });
+    expect(j.is_remote).toBe(true);
+  });
+
+  it('is_remote false when no remote keyword', () => {
+    expect(transformAdzunaJob(RAW).is_remote).toBe(false);
+  });
+
+  it('extracts requirements from description', () => {
+    const j = transformAdzunaJob(RAW);
+    expect(j.requirements_array).toContain('React');
+    expect(j.requirements_array).toContain('TypeScript');
+  });
+});
+
+// ── fetchFromAdzuna ────────────────────────────────────────────────────────────
+
+describe('fetchFromAdzuna', () => {
+  it('returns empty array when ADZUNA keys not set', async () => {
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+    const result = await fetchFromAdzuna({ titles: ['Engineer'] });
+    expect(result).toEqual([]);
+  });
+});
+
+// ── deduplicateJobs — cross-source (title+company) ────────────────────────────
+
+describe('deduplicateJobs — cross-source dedup', () => {
+  it('deduplicates by URL', () => {
+    const jobs = [
+      { url: 'https://a.com', job_title: 'Eng', company: 'X' },
+      { url: 'https://a.com', job_title: 'Eng', company: 'X' },
+    ];
+    expect(deduplicateJobs(jobs)).toHaveLength(1);
+  });
+
+  it('deduplicates same job from different sources by title+company when URLs differ', () => {
+    const jobs = [
+      { url: 'https://jsearch.com/job/1', job_title: 'Senior Engineer', company: 'Acme Corp' },
+      { url: 'https://adzuna.ca/job/99',  job_title: 'Senior Engineer', company: 'Acme Corp' },
+    ];
+    expect(deduplicateJobs(jobs)).toHaveLength(1);
+  });
+
+  it('keeps distinct jobs with same title at different companies', () => {
+    const jobs = [
+      { url: 'https://a.com/1', job_title: 'Engineer', company: 'Alpha Inc' },
+      { url: 'https://b.com/2', job_title: 'Engineer', company: 'Beta Corp' },
+    ];
+    expect(deduplicateJobs(jobs)).toHaveLength(2);
+  });
+
+  it('normalizes title+company for comparison (case, punctuation)', () => {
+    const jobs = [
+      { url: 'https://a.com/1', job_title: 'Senior Engineer', company: 'Acme Corp.' },
+      { url: 'https://b.com/2', job_title: 'senior engineer',  company: 'acme corp'  },
+    ];
+    expect(deduplicateJobs(jobs)).toHaveLength(1);
   });
 });
