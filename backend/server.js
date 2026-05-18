@@ -279,7 +279,9 @@ app.post('/api/match', upload.single('resume'), async (req, res) => {
       resultsPerPage: parseInt(results_per_page) || 10,
     });
 
-    const ranked = scoreAndRank(resume, jobs);
+    // 32% threshold: removes jobs with 0 skill matches (pure seniority+proximity = 30%)
+    const MIN_MATCH_SCORE = 32;
+    const ranked = scoreAndRank(resume, jobs).filter(j => j.match_score >= MIN_MATCH_SCORE);
 
     // Guarantee postedAt on every job — backfills cached results that predate this field
     const now = Date.now();

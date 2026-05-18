@@ -25,14 +25,21 @@ function normalize(text) {
   return text.toLowerCase().replace(/[-\s.]+/g, '');
 }
 
+// Generic sub-tokens that provide no signal when extracted from compound skill names
+const GENERIC_SUBTOKENS = new Set([
+  'code','coding','service','services','platform','system','systems',
+  'management','manager','tool','tools','library','framework','api',
+  'development','developer','engineering','engineer','software','application',
+  'data','base','web','app','cloud','server','client','core','pro','plus',
+  'suite','studio','testing','library','testing','driven','based',
+]);
+
 function buildResumeTokenSet(resume) {
   const tokens = new Set();
   for (const skill of (resume.skills || [])) {
-    const norm = normalize(skill);
-    tokens.add(norm);
-    // Only add sub-tokens for single-word skills; multi-word skills match via normalize()
-    const parts = tokenize(skill);
-    if (parts.length === 1) parts.forEach(t => tokens.add(t));
+    tokens.add(normalize(skill));
+    // Add sub-tokens for all skills; skip generic words that add noise
+    tokenize(skill).filter(t => !GENERIC_SUBTOKENS.has(t)).forEach(t => tokens.add(t));
   }
   for (const exp of (resume.experience || [])) {
     tokenize(exp.title || '').forEach(t => tokens.add(t));

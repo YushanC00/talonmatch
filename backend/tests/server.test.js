@@ -187,6 +187,24 @@ describe('POST /api/match', () => {
     expect(new Date(res.body.jobs[0].postedAt).getTime()).not.toBeNaN();
   });
 
+  it('filters out jobs below minimum match score (32%)', async () => {
+    pdfParse.mockResolvedValue({ numpages: 1, text: 'text' });
+    parseResumeAI.mockResolvedValue(PARSED_RESUME);
+    fetchJobs.mockResolvedValue([]);
+    scoreAndRank.mockReturnValue([
+      { job_title: 'Senior Engineer', postedAt: '2024-01-01T00:00:00Z', match_score: 80 },
+      { job_title: 'Irrelevant Job',  postedAt: '2024-01-01T00:00:00Z', match_score: 30 },
+      { job_title: 'Teacher',         postedAt: '2024-01-01T00:00:00Z', match_score: 20 },
+    ]);
+    const res = await request(app)
+      .post('/api/match')
+      .attach('resume', Buffer.from('%PDF'), { filename: 'r.pdf', contentType: 'application/pdf' });
+    expect(res.status).toBe(200);
+    // Only the 80% job should survive the min-score filter
+    expect(res.body.jobs).toHaveLength(1);
+    expect(res.body.jobs[0].job_title).toBe('Senior Engineer');
+  });
+
   it('returns 500 on unhandled error', async () => {
     pdfParse.mockRejectedValue(new Error('disk failure'));
     const res = await request(app)

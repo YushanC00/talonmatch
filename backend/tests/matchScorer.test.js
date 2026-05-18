@@ -318,3 +318,45 @@ describe('scoreAndRank — cross-domain false positives', () => {
     expect(scored.match_score).toBeLessThan(40);
   });
 });
+
+// ── Sub-token expansion for compound skills ───────────────────────────────────
+
+describe('scoreAndRank — compound skill sub-tokens', () => {
+  it('matches "AWS" requirement when resume has multi-word skill "AWS code pipeline"', () => {
+    const resume = makeResume({ skills: ['AWS code pipeline'] });
+    const job = makeJob({ requirements_array: ['AWS'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    // "aws" sub-token from "AWS code pipeline" should match single "AWS" requirement
+    expect(scored.match_score).toBeGreaterThan(30);
+  });
+
+  it('matches "React" requirement when resume has "React Testing Library"', () => {
+    const resume = makeResume({ skills: ['React Testing Library'] });
+    const job = makeJob({ requirements_array: ['React'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeGreaterThan(30);
+  });
+
+  it('matches "Node.js" requirement when resume has "Node.js" (normalize deduplication)', () => {
+    const resume = makeResume({ skills: ['Node.js'] });
+    const job = makeJob({ requirements_array: ['Node.js'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeGreaterThan(30);
+  });
+
+  it('"writing" sub-token does NOT match "Creative Writing" req (tokenHit requires all tokens)', () => {
+    const resume = makeResume({ skills: ['UX Writing'], most_recent_job_title: 'UX Designer', city: undefined, province: undefined });
+    const job = makeJob({ requirements_array: ['Creative Writing', 'Copywriting', 'SEO'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    // "creative" is not in token set → tokenHit fails → Creative Writing unmatched
+    expect(scored.match_score).toBeLessThan(50);
+  });
+
+  it('"design" sub-token does NOT cause match on unrelated "Graphic Design" req for software role', () => {
+    const resume = makeResume({ skills: ['Design Systems', 'React'], most_recent_job_title: 'Frontend Engineer' });
+    const job = makeJob({ requirements_array: ['Graphic Design', 'Illustration', 'Adobe Illustrator'] });
+    const [scored] = scoreAndRank(resume, [job]);
+    // "graphic" not in token set → tokenHit fails for "Graphic Design"
+    expect(scored.match_score).toBeLessThan(40);
+  });
+});

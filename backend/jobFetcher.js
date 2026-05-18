@@ -195,7 +195,9 @@ function extractRequirements(description, highlights) {
   return Array.from(found).slice(0, 10);
 }
 
+let _httpGetImpl = null;
 function httpGet(url, headers = {}) {
+  if (_httpGetImpl) return _httpGetImpl(url, headers);
   return new Promise((resolve, reject) => {
     const opts = {
       headers: { "User-Agent": "job-search-app/1.0", ...headers },
@@ -256,11 +258,23 @@ function transformJSearchJob(job) {
 }
 
 function sanitizeTitle(t) {
-  return t
+  // Take only the first segment when title uses "|" as separator
+  const primary = t.split('|')[0];
+  return primary
     .replace(/^[-•●▪–—*\s]+/, "") // strip leading bullets/dashes
     .replace(/[•●▪()[\]{}]/g, "") // strip special chars anywhere
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+// Tokens that indicate an education/teaching role — not searchable for job board queries
+const TEACHER_RE = /\b(teach|teacher|teaching|instructor|classroom|curriculum|school|student|pupil|grade|lesson|tutor)\b/i;
+
+function isSearchableTitle(title) {
+  const clean = sanitizeTitle(title).trim();
+  if (!clean) return false;
+  if (TEACHER_RE.test(clean)) return false;
+  return true;
 }
 
 function buildSingleQuery(title, userLocation = "") {
@@ -389,7 +403,7 @@ async function fetchFromJSearch({
     throw new Error("Set OPENWEBNINJA_KEY or RAPIDAPI_KEY env var");
 
   const topTitles = [
-    ...new Set(titles.map(sanitizeTitle).filter(Boolean)),
+    ...new Set(titles.map(sanitizeTitle).filter(t => t && isSearchableTitle(t))),
   ].slice(0, 3);
 
   if (process.env.DRY_RUN === "true") {
@@ -634,5 +648,7 @@ module.exports = {
   transformJSearchJob, transformRemotiveJob, transformAdzunaJob,
   getMockData,
   cacheGet, cacheSet,
+  isSearchableTitle,
   _setCacheDirForTesting: (dir) => { CACHE_DIR = dir; },
+  _setHttpGetForTesting:  (fn)  => { _httpGetImpl = fn; },
 };
