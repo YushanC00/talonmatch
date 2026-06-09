@@ -109,6 +109,10 @@ export type SSEEvent =
 export interface MatchApiResponse {
   resume_skills: string[]
   resume_experience: WorkExperience[]
+  resume_projects?: unknown[]
+  resume_education?: unknown[]
+  most_recent_job_title?: string
+  all_job_titles?: string[]
   jobs: Job[]
 }
 
