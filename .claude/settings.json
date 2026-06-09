@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(GH_TOKEN=REDACTED gh pr create --title 'feat\\(pdf\\): react-pdf export with design DNA mirroring and bullet artifact fix' --body ' *)",
-      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}, indent=2\\)\\)\")",
+"Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}, indent=2\\)\\)\")",
       "Bash(npm install *)",
       "Bash(curl -s -w \"\\\\nHTTP %{http_code}\" http://localhost:3001/api/tailor-resume -X POST -H \"Content-Type: application/json\" -d '{\"parsed_resume\":{\"skills\":[\"React\"]},\"job_description\":\"test\"}')",
       "mcp__plugin_playwright_playwright__browser_navigate_back",
