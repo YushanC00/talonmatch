@@ -130,6 +130,11 @@ function scoreJob(resume, job, resumeTokens) {
   let match_score = Math.round(Math.min(raw, 1) * 100);
   if (reqResult.unmatched.length > 0) match_score = Math.min(match_score, 99);
 
+  // Sparse requirements guard: truncated job descriptions yield too few reqs → artificially inflate score
+  const reqCount = job.requirements_array?.length || 0;
+  if (reqCount === 1) match_score = Math.min(match_score, 70);
+  else if (reqCount === 2) match_score = Math.min(match_score, 80);
+
   const match_reason = buildMatchReason(reqResult.matched, reqResult.unmatched, match_score);
 
   // Normalize is_remote using same signals as scoreProximity so card label is always accurate

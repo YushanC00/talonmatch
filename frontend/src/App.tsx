@@ -118,7 +118,7 @@ async function fetchBackgroundJobs(city: string): Promise<Job[]> {
     return ensurePostedAt(
       ((data.jobs as Job[]) || []).map(job => ({
         ...job,
-        match_score: job.match_score ?? (Math.floor(Math.random() * 30) + 60),
+        match_score: job.match_score ?? 0,
       }))
     );
   } catch {
@@ -168,7 +168,7 @@ export default function App() {
   const resultsRef = useRef<(MatchApiResponse & Record<string, unknown>) | null>(null);
   useEffect(() => { resultsRef.current = results; }, [results]);
 
-  // On first render: hydrate parsedResume from localStorage for zero-latency guest UX.
+  // On first render: hydrate parsedResume and last match results from localStorage.
   // Always sets resumeFetched=true so JobCard's noResume logic applies immediately to guests.
   useEffect(() => {
     const stored = localStorage.getItem('talonmatch_guest_resume');
@@ -178,7 +178,34 @@ export default function App() {
         if (parsed?.experience?.length > 0) setParsedResume(parsed);
       } catch {}
     }
+    const lastResults = localStorage.getItem('talonmatch_last_results');
+    if (lastResults) {
+      try {
+        const parsed = JSON.parse(lastResults);
+        if (parsed?.jobs?.length > 0) { setResults(parsed); setRevealed(true); }
+      } catch {}
+    }
     setResumeFetched(true);
+
+    // Auto-refresh jobs in background using stored resume — no re-upload needed
+    const refreshPayload = localStorage.getItem('talonmatch_refresh_payload');
+    if (refreshPayload) {
+      fetch('/api/jobs/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: refreshPayload,
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data?.jobs?.length) return;
+          setResults(prev => {
+            const merged = { ...prev, jobs: ensurePostedAt(data.jobs) };
+            try { localStorage.setItem('talonmatch_last_results', JSON.stringify(merged)); } catch {}
+            return merged as typeof prev;
+          });
+        })
+        .catch(() => {});
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate parsedResume from profiles whenever a user session is established.
@@ -257,6 +284,9 @@ export default function App() {
     async function initBackground() {
       const city = await resolveCity('');
       if (!cancelled && city) setGeoCity(city);
+
+      // Skip background fetch when persisted match results already exist
+      if (localStorage.getItem('talonmatch_last_results')) return;
 
       const jobs = await fetchBackgroundJobs(city);
       if (!cancelled) setBackgroundJobs(jobs);
@@ -360,11 +390,32 @@ export default function App() {
   }, []);
 
   const handleRefreshJobs = async () => {
-    if (!lastFileRef.current) return;
     setRefreshing(true);
     try {
       await fetch('/api/cache/clear', { method: 'DELETE' });
-      await handleSubmit({ file: lastFileRef.current });
+
+      if (lastFileRef.current) {
+        // File still in memory — full re-upload path
+        await handleSubmit({ file: lastFileRef.current });
+      } else {
+        // Page was refreshed — use stored resume payload, no PDF needed
+        const stored = localStorage.getItem('talonmatch_refresh_payload');
+        if (!stored) { setRefreshing(false); return; }
+        const payload = JSON.parse(stored);
+        const res = await fetch('/api/jobs/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`Refresh failed (${res.status})`);
+        const data = await res.json();
+        if (data.jobs) {
+          const merged = { ...results, jobs: ensurePostedAt(data.jobs) };
+          setResults(merged as typeof results);
+          try { localStorage.setItem('talonmatch_last_results', JSON.stringify(merged)); } catch {}
+        }
+      }
+
       setSyncToast(true);
       setTimeout(() => setSyncToast(false), 3000);
     } catch (err) {
@@ -390,6 +441,26 @@ export default function App() {
       // Client-side postedAt guarantee — works even when server is running old code
       if (data.jobs) data.jobs = ensurePostedAt(data.jobs);
       setResults(data);
+      try {
+        localStorage.setItem('talonmatch_last_results', JSON.stringify(data));
+        if (data.all_job_titles?.length) {
+          localStorage.setItem('talonmatch_refresh_payload', JSON.stringify({
+            resume: {
+              skills:                  data.resume_skills        || [],
+              experience:              data.resume_experience    || [],
+              projects:                data.resume_projects      || [],
+              education:               data.resume_education     || [],
+              most_recent_job_title:   data.most_recent_job_title || '',
+              all_job_titles:          data.all_job_titles,
+              city:                    data.resume_city          || '',
+              province:                data.resume_province      || '',
+              location:                data.resume_location      || '',
+            },
+            titles:   data.all_job_titles,
+            location: geoCity || '',
+          }));
+        }
+      } catch {}
       setExpiredUrls(new Set());
       const verifyUrls = (data.jobs ?? []).map((j: Job) => j.url).filter(Boolean) as string[];
       if (verifyUrls.length > 0) {
@@ -544,7 +615,7 @@ export default function App() {
                     parsedResume={parsedResume}
                     onLogin={handleLogin}
                     onNewResume={handleReset}
-                    onSignOut={() => { setUser(null); setRevealed(false); setResults(null); setExpiredUrls(new Set()); }}
+                    onSignOut={() => { setUser(null); setRevealed(false); setResults(null); setExpiredUrls(new Set()); localStorage.removeItem('talonmatch_last_results'); }}
                   />
                 </div>
               </div>

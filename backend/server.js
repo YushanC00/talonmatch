@@ -223,6 +223,27 @@ app.get('/api/jobs/search', async (req, res) => {
   }
 });
 
+// POST /api/jobs/refresh — re-score with stored resume, no PDF needed
+app.post('/api/jobs/refresh', async (req, res) => {
+  const { resume, titles, location } = req.body || {};
+  if (!resume) return res.status(400).json({ error: 'resume required' });
+  if (!titles?.length) return res.status(400).json({ error: 'titles required' });
+
+  try {
+    const jobs = await fetchJobs({
+      title: titles[0],
+      titles,
+      userLocation: location || '',
+      resultsPerPage: 20,
+    });
+    const MIN_MATCH_SCORE = 32;
+    const ranked = scoreAndRank(resume, jobs).filter(j => j.match_score >= MIN_MATCH_SCORE);
+    res.json({ jobs: ranked });
+  } catch (err) {
+    res.status(500).json({ error: 'Refresh failed', details: err.message });
+  }
+});
+
 // POST /api/match — upload resume PDF, get scored+ranked jobs back
 app.post('/api/match', upload.single('resume'), async (req, res) => {
   if (!req.file) {

@@ -9,7 +9,7 @@ const {
   deduplicateJobs, extractRequirements,
   formatPayRange, isCompatibleWithLocation,
   transformJSearchJob, transformRemotiveJob, transformAdzunaJob,
-  getMockData, fetchFromJSearch, fetchFromAdzuna,
+  getMockData, fetchJobs, fetchFromJSearch, fetchFromAdzuna,
   cacheGet, cacheSet, clearCache,
   _setCacheDirForTesting, _setHttpGetForTesting,
   isSearchableTitle, expandCareerTitles,
@@ -349,6 +349,22 @@ describe('extractRequirements', () => {
     ].join('\n');
     const reqs = extractRequirements(desc, null);
     expect(reqs.some(r => /user research/i.test(r))).toBe(true);
+  });
+
+  it('does not match REST from common English "rest" (e.g. "the rest of our staff")', () => {
+    const desc = 'Work well as a team member with the rest of our content management and editorial staff.';
+    const reqs = extractRequirements(desc, null);
+    expect(reqs).not.toContain('Rest');
+    expect(reqs).not.toContain('REST');
+  });
+
+  it('does not extract generic biz terms (KPI, OKR, Coaching, Go-to-Market) from sales-like description', () => {
+    const desc = 'We are seeking KPI driven sales reps. You will receive Coaching from our team. OKR framework. Go-to-Market experience a plus.';
+    const reqs = extractRequirements(desc, null);
+    expect(reqs).not.toContain('KPI');
+    expect(reqs).not.toContain('OKR');
+    expect(reqs).not.toContain('Coaching');
+    expect(reqs).not.toContain('Go-to-Market');
   });
 
   it('stops section extraction when a new non-bullet heading appears', () => {
@@ -743,6 +759,19 @@ describe('transformAdzunaJob', () => {
     expect(j.requirements_array).toContain('React');
     expect(j.requirements_array).toContain('TypeScript');
   });
+
+  it('extracts tech keywords from job title when description is sparse', () => {
+    const sparse = { ...RAW, title: 'Senior Front End Developer (React.js)', description: 'Great opportunity.' };
+    const j = transformAdzunaJob(sparse);
+    expect(j.requirements_array).toContain('React');
+  });
+
+  it('extracts multiple tech keywords from a tech-stack title', () => {
+    const sparse = { ...RAW, title: 'Senior TypeScript / Node.js Engineer', description: 'Join our team.' };
+    const j = transformAdzunaJob(sparse);
+    expect(j.requirements_array.some(r => /typescript/i.test(r))).toBe(true);
+    expect(j.requirements_array.some(r => /node/i.test(r))).toBe(true);
+  });
 });
 
 // ── fetchFromAdzuna ────────────────────────────────────────────────────────────
@@ -840,5 +869,45 @@ describe('deduplicateJobs — cross-source dedup', () => {
       { url: 'https://b.com/2', job_title: 'senior engineer',  company: 'acme corp'  },
     ];
     expect(deduplicateJobs(jobs)).toHaveLength(1);
+  });
+});
+
+// ── fetchJobs — DISABLE_JSEARCH flag ─────────────────────────────────────────
+
+describe('fetchJobs — DISABLE_JSEARCH flag', () => {
+  const calledUrls = [];
+
+  beforeEach(() => {
+    calledUrls.length = 0;
+    process.env.OPENWEBNINJA_KEY = 'test-key';
+    process.env.ADZUNA_APP_ID    = 'test-id';
+    process.env.ADZUNA_APP_KEY   = 'test-key';
+    process.env.DISABLE_JSEARCH  = 'true';
+    _setHttpGetForTesting(async (url) => {
+      calledUrls.push(url);
+      if (url.includes('remotive')) return { status: 200, body: JSON.stringify({ jobs: [] }) };
+      if (url.includes('adzuna'))   return { status: 200, body: JSON.stringify({ results: [] }) };
+      return { status: 200, body: JSON.stringify({}) };
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.OPENWEBNINJA_KEY;
+    delete process.env.ADZUNA_APP_ID;
+    delete process.env.ADZUNA_APP_KEY;
+    delete process.env.DISABLE_JSEARCH;
+    _setHttpGetForTesting(null);
+  });
+
+  it('does not call JSearch (rapidapi/openwebninja) when DISABLE_JSEARCH=true', async () => {
+    await fetchJobs({ title: 'Software Engineer', userLocation: 'Toronto' });
+    const jsearchCalls = calledUrls.filter(u => u.includes('rapidapi') || u.includes('openwebninja') || u.includes('jsearch'));
+    expect(jsearchCalls).toHaveLength(0);
+  });
+
+  it('still calls Remotive and Adzuna when DISABLE_JSEARCH=true', async () => {
+    await fetchJobs({ title: 'Software Engineer', userLocation: 'Toronto' });
+    expect(calledUrls.some(u => u.includes('remotive'))).toBe(true);
+    expect(calledUrls.some(u => u.includes('adzuna'))).toBe(true);
   });
 });

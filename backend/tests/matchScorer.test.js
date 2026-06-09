@@ -61,11 +61,11 @@ describe('scoreAndRank', () => {
   });
 
   it('perfect match: all requirements met + same seniority + same city → score near 100', () => {
-    const resume = makeResume({ skills: ['JavaScript', 'React'] });
-    const job    = makeJob({ requirements_array: ['JavaScript', 'React'] });
+    const resume = makeResume({ skills: ['JavaScript', 'React', 'TypeScript'] });
+    const job    = makeJob({ requirements_array: ['JavaScript', 'React', 'TypeScript'] });
     const [scored] = scoreAndRank(resume, [job]);
     // 70% skills (1.0) + 20% seniority (1.0) + 10% proximity (1.0) = 100%
-    // BUT: unmatched.length === 0, so no cap. Should be 100.
+    // 3 requirements — no sparse cap. Should be 100.
     expect(scored.match_score).toBe(100);
   });
 });
@@ -113,11 +113,11 @@ describe('scoreAndRank — honesty cap', () => {
     expect(scored.match_score).toBeLessThanOrEqual(99);
   });
 
-  it('may return 100 when all requirements are matched', () => {
-    const resume = makeResume({ skills: ['JavaScript', 'React'] });
-    const job    = makeJob({ requirements_array: ['JavaScript', 'React'], is_remote: true });
+  it('may return 100 when all requirements are matched (3+ reqs)', () => {
+    const resume = makeResume({ skills: ['JavaScript', 'React', 'TypeScript'] });
+    const job    = makeJob({ requirements_array: ['JavaScript', 'React', 'TypeScript'], is_remote: true });
     const [scored] = scoreAndRank(resume, [job]);
-    // All requirements matched — no cap
+    // All requirements matched, 3 reqs — no sparse cap
     expect(scored.match_score).toBe(100);
   });
 });
@@ -358,5 +358,46 @@ describe('scoreAndRank — compound skill sub-tokens', () => {
     const [scored] = scoreAndRank(resume, [job]);
     // "graphic" not in token set → tokenHit fails for "Graphic Design"
     expect(scored.match_score).toBeLessThan(40);
+  });
+});
+
+// ── Sparse requirements guard ─────────────────────────────────────────────────
+
+describe('scoreAndRank — sparse requirements guard', () => {
+  it('caps at 70% when only 1 requirement extracted (perfect match)', () => {
+    const resume = makeResume({ skills: ['React'] });
+    const job    = makeJob({ requirements_array: ['React'], is_remote: true });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeLessThanOrEqual(70);
+  });
+
+  it('caps at 80% when only 2 requirements extracted (perfect match)', () => {
+    const resume = makeResume({ skills: ['React', 'TypeScript'] });
+    const job    = makeJob({ requirements_array: ['React', 'TypeScript'], is_remote: true });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeLessThanOrEqual(80);
+  });
+
+  it('no sparse cap for 3+ requirements (full score possible)', () => {
+    const resume = makeResume({ skills: ['React', 'TypeScript', 'GraphQL'] });
+    const job    = makeJob({ requirements_array: ['React', 'TypeScript', 'GraphQL'], is_remote: true });
+    const [scored] = scoreAndRank(resume, [job]);
+    expect(scored.match_score).toBeGreaterThan(65);
+  });
+
+  it('sparse cap applies even when unmatched (1-req job, 0 matches → capped at 70)', () => {
+    const resume = makeResume({ skills: ['COBOL'] });
+    const job    = makeJob({ requirements_array: ['React'], is_remote: true });
+    const [scored] = scoreAndRank(resume, [job]);
+    // Already < 70 due to no matches; guard must not raise it; 99% honesty cap still applies
+    expect(scored.match_score).toBeLessThanOrEqual(70);
+  });
+
+  it('no sparse cap when requirements_array is absent', () => {
+    const resume = makeResume({ skills: ['React'] });
+    const job    = makeJob({ requirements_array: undefined, is_remote: true });
+    const [scored] = scoreAndRank(resume, [job]);
+    // No requirements → treated as 0-length → no sparse cap, not capped at 55
+    expect(scored.match_score).toBeGreaterThan(0);
   });
 });

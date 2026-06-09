@@ -490,3 +490,46 @@ describe('POST /api/notify — deduplication', () => {
     expect(res.body.skipped).toBe(2);
   });
 });
+
+// ── POST /api/jobs/refresh ──────────────────────────────────────────────────
+
+describe('POST /api/jobs/refresh', () => {
+  const RESUME = { ...PARSED_RESUME };
+  const JOBS = [
+    { job_title: 'Senior Engineer', postedAt: '2024-01-01T00:00:00Z', match_score: 85 },
+    { job_title: 'Junior Engineer',  postedAt: '2024-01-01T00:00:00Z', match_score: 20 },
+  ];
+
+  beforeEach(() => {
+    fetchJobs.mockResolvedValue(JOBS);
+    scoreAndRank.mockReturnValue(JOBS);
+  });
+
+  it('returns 400 when resume missing', async () => {
+    const res = await request(app).post('/api/jobs/refresh').send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when titles missing or empty', async () => {
+    const res = await request(app).post('/api/jobs/refresh').send({ resume: RESUME, titles: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns scored jobs without requiring a PDF upload', async () => {
+    const res = await request(app)
+      .post('/api/jobs/refresh')
+      .send({ resume: RESUME, titles: ['Senior Engineer'], location: 'Toronto, ON' });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.jobs)).toBe(true);
+    expect(fetchJobs).toHaveBeenCalled();
+    expect(scoreAndRank).toHaveBeenCalled();
+  });
+
+  it('filters out jobs below minimum match score', async () => {
+    const res = await request(app)
+      .post('/api/jobs/refresh')
+      .send({ resume: RESUME, titles: ['Senior Engineer'], location: 'Toronto, ON' });
+    expect(res.status).toBe(200);
+    expect(res.body.jobs.every(j => j.match_score >= 32)).toBe(true);
+  });
+});

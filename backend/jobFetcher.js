@@ -111,7 +111,7 @@ const SKILL_KEYWORD_RE = new RegExp(
     // Engineering
     'React','Angular','Vue','Node\\.js','Python','Java','Go','Rust','TypeScript',
     'JavaScript','PostgreSQL','MySQL','MongoDB','Redis','Docker','Kubernetes',
-    'AWS','GCP','Azure','GraphQL','REST','Git','Linux','CI\\/CD','Agile','Scrum',
+    'AWS','GCP','Azure','GraphQL','RESTful','Git','Linux','CI\\/CD','Agile','Scrum',
     'CSS','HTML','Ruby','Rails','PHP','Swift','Kotlin','Flutter','Next\\.js',
     'Tailwind','SQL','Terraform','Kafka','Spark',
     // Design tools
@@ -123,12 +123,11 @@ const SKILL_KEYWORD_RE = new RegExp(
     'Design Thinking','Journey Mapping','UX Writing','A\\/B Testing','Accessibility',
     'WCAG','Product Design','Service Design','Design Strategy','Brand Design',
     'Typography','Content Strategy','Design Leadership',
-    // Product skills
-    'Product Management','Product Strategy','Roadmap','Product Vision',
-    'Go.to.Market','Analytics','Data Analytics','User Stories','OKR','KPI',
-    'Product Discovery','User Interviews','Competitive Analysis',
-    // Leadership/collaboration
-    'Stakeholder Management','Team Leadership','Mentoring','Coaching',
+    // Product skills (removed generic biz terms: KPI, OKR, Analytics, Go-to-Market)
+    'Product Management','Product Strategy','Product Vision',
+    'Data Analytics','User Stories','Product Discovery','User Interviews','Competitive Analysis',
+    // Leadership/collaboration (removed Coaching — too common in sales/non-tech descriptions)
+    'Stakeholder Management','Team Leadership','Mentoring',
     'Cross.functional','Executive Communication','Design Reviews',
     // Short forms (last to avoid partial matches shadowing multi-word)
     'UX','UI',
@@ -611,7 +610,7 @@ function transformAdzunaJob(job) {
     job_title: title,
     company:   job.company?.display_name || '',
     description: desc,
-    requirements_array: extractRequirements(desc),
+    requirements_array: extractRequirements(title + '\n' + desc),
     location: job.location?.display_name || 'Canada',
     is_remote: /remote/i.test(title + ' ' + desc),
     url: job.redirect_url || '',
@@ -666,8 +665,11 @@ async function fetchJobs({ title, titles, userLocation, country = 'CA', resultsP
     }
 
     // Run all sources in parallel; Remotive and Adzuna degrade gracefully
+    const jsearchPromise = process.env.DISABLE_JSEARCH === 'true'
+      ? Promise.resolve([])
+      : fetchFromJSearch({ titles: allTitles, userLocation, country, resultsPerPage });
     const [jsearchResult, remotiveResult, adzunaResult] = await Promise.allSettled([
-      fetchFromJSearch({ titles: allTitles, userLocation, country, resultsPerPage }),
+      jsearchPromise,
       fetchFromRemotive({ title: allTitles[0], userLocation, resultsPerPage: resultsPerPage * 2 }),
       fetchFromAdzuna({ titles: allTitles, resultsPerPage }),
     ]);
